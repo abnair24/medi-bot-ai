@@ -56,7 +56,7 @@ def build_graph(checkpointer: AsyncSqliteSaver):
     # wiring, decides activation (a no-op dependency when disabled).
     hyde_svc = HyDEService(llm=llm)
     retrieval_svc = RetrievalService(
-        qdrant=qdrant, embedder=embedder, sparse=sparse, hyde=hyde_svc
+        qdrant=qdrant, embedder=embedder, sparse=sparse, hyde=hyde_svc, reranker=reranker
     )
     rerank_svc = RerankService(reranker=reranker)
     generation_svc = GenerationService(llm=llm)

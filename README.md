@@ -264,8 +264,6 @@ Visual tracing (Arize Phoenix) is planned — see Roadmap.
 
 ## Roadmap
 
-Planned extensions (design in [`docs/EXTENSIONS.md`](docs/EXTENSIONS.md)):
-
 - **Agentic SQL tool-loop** — replace the linear SQL path with a ReAct sub-graph
   (multi-step queries, self-correction). *(Phase 12)*
 - **Distributed tracing with Arize Phoenix** — per-request span waterfalls + latency/cost

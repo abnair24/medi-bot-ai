@@ -2,10 +2,6 @@
 
 > Component layout, LangGraph state machine, adapter pattern, Pydantic boundaries,
 > and folder structure. Read this before writing code.
->
-> **Companion:** [`ARCHITECTURE_REVIEW.md`](ARCHITECTURE_REVIEW.md) — the forward-looking
-> design review (improvement backlog, portfolio-vs-prod judgment, deferred prod design,
-> findings log). This doc = *what is built*; the review = *what to build next and why*.
 
 ---
 
@@ -202,22 +198,6 @@ generative LLMs — they don't produce text, they produce vectors or scores. The
 generative LLM is the Groq-hosted model, called 2–3 times per request (router + generation,
 or router + SQL-gen + narration).
 
-### 2.5 What vLLM and MCP are (and why they're not in this architecture)
-
-**vLLM** is an inference server for self-hosting LLMs on your own GPU. It replaces the Groq
-API — instead of calling Groq, you'd run Llama-3 on your machine via vLLM. You'd use it
-if you needed to self-host for cost, privacy, or latency. For this project, Groq is faster
-and cheaper at this scale. If asked: "I'd swap the llm_adapter to point at a vLLM endpoint
-instead of Groq — the adapter pattern makes that a one-file change."
-
-**MCP** (Model Context Protocol) is a protocol for connecting external tools/data-sources
-to an LLM agent — like how Claude connects to Google Drive or Slack. It's an
-interoperability standard, not an inference layer. Your adapters serve the same purpose at
-the application level: they're your app's interface to Qdrant, SQLite, and the LLM. MCP
-would matter if you were publishing MediBot as a tool that plugs into someone else's agent
-(e.g., exposing MediBot's retrieval as an MCP server that Claude or another agent could
-call). That's a later extension, not a foundation.
-
 ---
 
 ## 3. Folder structure
@@ -290,12 +270,6 @@ sql_rag_service    →   sql_adapter          →   SQLite
                        llm_adapter          →   Groq API
 ```
 
-**Why this matters for eval:** in tests, you inject a fake/mock adapter. The RBAC test
-injects a real Qdrant adapter (to test the actual metadata filter) but a fake LLM adapter
-(to isolate the retrieval check). The faithfulness test injects a real LLM but a
-deterministic retriever (to test generation in isolation). DI makes stage-by-stage eval
-possible.
-
 ---
 
 ## 4. Pydantic boundaries (where validation lives)
@@ -349,103 +323,4 @@ Hardcoded user table (fine for portfolio):
 JWT payload: `{"sub": "dr.mehta", "role": "doctor", "exp": ...}`.
 Token lifetime: 24 hours. No refresh — this is a demo.
 
----
 
-## 7. Production considerations (known limitations)
-
-Four architectural items to address during build. These are acceptable for a demo but
-would need resolution for production traffic.
-
-### 7.1 Async pipeline execution
-
-FastAPI is async, but the local models (embedding, sparse, reranker) run synchronously
-on CPU. Under concurrent requests, synchronous model calls block the event loop and
-serialize all requests.
-
-**Fix:** wrap every local-model call in `asyncio.to_thread()`:
-
-```python
-# In retrieval_service.py
-dense_vector = await asyncio.to_thread(self.embedder.embed, query)
-sparse_vector = await asyncio.to_thread(self.sparse.embed, query)
-
-# In rerank_service.py
-scores = await asyncio.to_thread(self.reranker.rerank, query, chunks)
-```
-
-This moves CPU-bound work to a thread pool. The event loop stays free for I/O
-(Qdrant queries, Groq API calls). Apply this pattern in every service that calls a
-local model — retrieval, rerank, and ingestion.
-
-### 7.2 JWT secret default value
-
-The settings default `jwt_secret = "change-this-in-production"` will be forgotten in
-deployed environments. Add a startup guard in `app.py`:
-
-```python
-# In backend/src/api/app.py — lifespan or startup event
-if settings.jwt_secret == "change-this-in-production":
-    if os.getenv("ENVIRONMENT", "dev") != "dev":
-        raise RuntimeError("JWT_SECRET must be changed in non-dev environments")
-    logger.warning("Using default JWT secret — dev only")
-```
-
-Generate a real secret during deployment setup:
-
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-### 7.3 SQLite under concurrency
-
-SQLite's default mode disallows sharing connections across threads. The SQL adapter must
-use `check_same_thread=False` and enable WAL mode for concurrent reads:
-
-```python
-# In sql_adapter.py
-self._conn = sqlite3.connect(path, check_same_thread=False)
-self._conn.execute("PRAGMA journal_mode=WAL")  # allows concurrent readers
-self._conn.execute("PRAGMA query_only=ON")      # read-only guard for query path
-```
-
-For full async compatibility, consider `aiosqlite` as a drop-in wrapper. Since the
-SQL-RAG path only runs read queries, a single read-only connection with WAL mode is
-sufficient for demo-scale concurrency.
-
-### 7.4 Groq API rate limiting
-
-Groq's free tier has aggressive rate limits (~30 RPM). A demo with multiple concurrent
-users will hit 429 errors. Two mitigations:
-
-**1. Retry with exponential backoff in `llm_adapter.py`:**
-
-```python
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(min=1, max=10),
-    retry=retry_if_exception_type(RateLimitError),
-)
-async def generate(self, prompt: str) -> str:
-    ...
-```
-
-**2. Request-level rate limiting on the FastAPI app:**
-
-```python
-# In backend/src/api/app.py — use a simple middleware or dependency
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-
-# In chat_router.py
-@router.post("/chat")
-@limiter.limit("10/minute")
-async def chat(request: Request, body: ChatRequest):
-    ...
-```
-
-This prevents a single user from exhausting the Groq quota for everyone.

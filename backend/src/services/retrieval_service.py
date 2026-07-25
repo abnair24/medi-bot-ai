@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from src.adapters.embedding_adapter import EmbeddingAdapter
 from src.adapters.qdrant_adapter import QdrantAdapter
+from src.adapters.reranker_adapter import RerankerAdapter
 from src.adapters.sparse_adapter import SparseAdapter
 from src.config.access import ROLE_COLLECTIONS
 from src.config.settings import settings
@@ -33,11 +34,16 @@ class RetrievalService:
         embedder: EmbeddingAdapter,
         sparse: SparseAdapter,
         hyde: "HyDEService | None" = None,
+        reranker: RerankerAdapter | None = None,
     ) -> None:
         self._qdrant = qdrant
         self._embedder = embedder
         self._sparse = sparse
         self._hyde = hyde
+        # Used only by restricted_matches() for a cross-encoder relevance comparison
+        # (RRF scores are rank-based, not relevance-based, so they can't be compared
+        # across two searches). Optional — when absent, the access probe is skipped.
+        self._reranker = reranker
 
     async def search(
         self,
@@ -127,8 +133,9 @@ class RetrievalService:
         Security: restricted CONTENT never leaves this method — only collection names, and
         only to choose the denial message. The user's actual results stay pre-filtered.
         """
+        if self._reranker is None:
+            return []
         accessible = set(ROLE_COLLECTIONS.get(role, []))
-        user_top = max((c.score for c in user_chunks), default=0.0)
 
         dense_vector, sparse_vector = await asyncio.gather(
             asyncio.to_thread(self._embedder.embed_query, query),
@@ -140,25 +147,35 @@ class RetrievalService:
             role="admin",  # admin sees every collection — an unrestricted probe
             limit=settings.retrieval_top_k,
         )
+        if not probe:
+            return []
 
-        # An access miss requires the SINGLE best match for the query to be a collection the
-        # caller can't see, AND to clearly outscore the caller's own best hit. The margin
-        # guards against ties where the topic is merely absent (accessible + restricted both weak).
+        # Cross-encoder gives an ABSOLUTE relevance score (unlike RRF's rank-based score),
+        # so we can compare "how relevant is the best restricted chunk" against "how relevant
+        # is the best chunk the caller CAN see". Score BOTH sets with the same encoder.
+        probe_scored = await asyncio.to_thread(self._reranker.score, query, probe)
+        user_scored = (
+            await asyncio.to_thread(self._reranker.score, query, user_chunks)
+            if user_chunks
+            else []
+        )
+
+        restricted_hits = [(c, s) for c, s in probe_scored if c.collection not in accessible]
+        best_accessible = max((s for _, s in user_scored), default=float("-inf"))
+
         restricted: list[str] = []
-        if probe:
-            top = probe[0]
-            if (
-                top.collection not in accessible
-                and top.score > user_top + settings.rbac_probe_margin
-            ):
-                restricted.append(top.collection)
+        if restricted_hits:
+            best_chunk, best_score = max(restricted_hits, key=lambda pair: pair[1])
+            # Access miss: the query's answer is genuinely MORE relevant in a collection the
+            # caller can't see. On an absent topic everything scores low, so restricted never
+            # wins → no false denial. The margin keeps ties out.
+            if best_score > best_accessible + settings.rbac_probe_margin:
+                restricted.append(best_chunk.collection)
 
         log_request_event(
             request_id=request_id,
             role=role,
             event="rbac_access_probe",
             restricted_matches=restricted,
-            probe_top_score=round(probe[0].score, 4) if probe else None,
-            user_top_score=round(user_top, 4),
         )
         return restricted
