@@ -138,6 +138,7 @@ and Pydantic boundaries.
 ## Repository layout
 
 
+<img width="311" height="455" alt="Screenshot 2026-07-25 at 9 18 15 PM" src="https://github.com/user-attachments/assets/421981ee-f782-4efe-a4d9-c83918498bda" />
 
 ---
 
