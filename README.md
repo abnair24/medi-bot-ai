@@ -272,14 +272,3 @@ Planned extensions (design in [`docs/EXTENSIONS.md`](docs/EXTENSIONS.md)):
   dashboards on top of the existing PHI-safe logs. *(Phase 12)*
 - **Extension eval tracks** — dedicated multi-turn-rewrite and HITL-SQL-safety tracks.
 
----
-
-## Safety & data notes
-
-- MediBot **retrieves, it does not advise** — it quotes protocols with citations and never
-  prescribes, diagnoses, or interprets patient data. Clinical answers carry a mandatory,
-  deterministic disclaimer.
-- All patient data is **synthetic** (`backend/ingestion/data/mediassist.db`). Query text
-  and LLM responses are never logged or persisted.
-- Demo credentials and the default JWT secret are for local/demo only — the backend
-  refuses to start with the default secret outside a `dev` environment.
