@@ -21,8 +21,6 @@ documents** — scoped to what their role is allowed to see.
 
 ## Architecture
 
-**System overview:**
-
 ```mermaid
 flowchart TB
     U([Staff user · JWT role]):::client --> UI[Streamlit UI<br/>chat · admin eval dashboard]:::client
@@ -88,7 +86,6 @@ flowchart TB
     style EO fill:#f5f6ff,stroke:#3f51b5
 ```
 
-
 **Ingestion (offline, run once):**
 
 ```mermaid
@@ -103,6 +100,8 @@ flowchart LR
     classDef model fill:#fff3e0,stroke:#ef6c00,color:#e65100;
     classDef store fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c;
 ```
+**Repository Layout**
+<img width="311" height="455" alt="Screenshot 2026-07-25 at 9 18 15 PM" src="https://github.com/user-attachments/assets/4b9b64cc-73b5-402e-8543-943cfe61fd25" />
 
 - **Ingestion (offline):** Docling parses PDFs/MD → HierarchicalChunker → Pydantic-
   validated `ChunkMetadata` → dense + sparse embeddings → Qdrant (one `medibot` collection,
@@ -132,13 +131,6 @@ and Pydantic boundaries.
 | Frontend | Streamlit (chat tab + admin eval dashboard) |
 | Evals | pytest + numpy (deterministic) · DeepEval (LLM-judge) |
 | Lint / types | ruff · mypy |
-
----
-
-## Repository layout
-
-
-<img width="311" height="455" alt="Screenshot 2026-07-25 at 9 18 15 PM" src="https://github.com/user-attachments/assets/421981ee-f782-4efe-a4d9-c83918498bda" />
 
 ---
 
@@ -192,8 +184,11 @@ One-click login buttons are on the sign-in page (passwords never rendered).
 
 **Try it:**
 - As **Doctor**: *"first-line drug for Type 2 Diabetes?"* → cited clinical answer.
-- As **Nurse**: *"show me all insurance billing codes"* → RBAC refusal (no billing access).
+  <img width="1865" height="760" alt="docter" src="https://github.com/user-attachments/assets/5b4a9317-cc31-40b6-aca8-fd9c051e9ffd" />
+  
 - As **Billing**: *"how many claims are escalated?"* → SQL RAG answer (`8`).
+  <img width="1913" height="636" alt="Screenshot 2026-07-25 at 9 27 37 PM" src="https://github.com/user-attachments/assets/eb5dc748-ae80-4dd8-bb99-4f1288ffb430" />
+
 - RBAC red-team: the same NSTEMI query returns *billing* data to Billing and *clinical*
   protocol to Doctor — never crossing collections.
 
