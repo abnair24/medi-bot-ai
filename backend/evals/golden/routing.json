@@ -1,0 +1,250 @@
+[
+  {
+    "id": "R-001",
+    "question": "How many claims were rejected last month?",
+    "expected_route": "sql_rag",
+    "rationale": "Count over claim records — pure aggregation."
+  },
+  {
+    "id": "R-002",
+    "question": "What is the total amount billed for cardiology in Q1?",
+    "expected_route": "sql_rag",
+    "rationale": "Sum over claims filtered by department and period."
+  },
+  {
+    "id": "R-003",
+    "question": "What is the average claim settlement time for HDFC Ergo?",
+    "expected_route": "sql_rag",
+    "rationale": "Average over claim records by insurer."
+  },
+  {
+    "id": "R-004",
+    "question": "How many ventilators are overdue for calibration?",
+    "expected_route": "sql_rag",
+    "rationale": "Count over maintenance-ticket records."
+  },
+  {
+    "id": "R-005",
+    "question": "Which hospital filed the most NSTEMI claims this year?",
+    "expected_route": "sql_rag",
+    "rationale": "Group-by + max over claim records."
+  },
+  {
+    "id": "R-006",
+    "question": "List the number of maintenance tickets opened per equipment type.",
+    "expected_route": "sql_rag",
+    "rationale": "Group-by count over maintenance records."
+  },
+  {
+    "id": "R-007",
+    "question": "What is the total number of pending pre-authorizations?",
+    "expected_route": "sql_rag",
+    "rationale": "Count over claim records with a status filter."
+  },
+  {
+    "id": "R-008",
+    "question": "Compare claim rejection rates between January and February.",
+    "expected_route": "sql_rag",
+    "rationale": "Ratio comparison across two periods — aggregation."
+  },
+  {
+    "id": "R-009",
+    "question": "How many patient monitors reported fault code E-12 last quarter?",
+    "expected_route": "sql_rag",
+    "rationale": "Count over maintenance records filtered by fault code and period."
+  },
+  {
+    "id": "R-010",
+    "question": "What is the average length of stay recorded for dengue admissions?",
+    "expected_route": "sql_rag",
+    "rationale": "'recorded' + 'average' = compute over admission records."
+  },
+  {
+    "id": "R-011",
+    "question": "How many claims exceeded the NSTEMI package rate?",
+    "expected_route": "sql_rag",
+    "rationale": "Count over claims with a threshold predicate."
+  },
+  {
+    "id": "R-012",
+    "question": "What is the trend in equipment downtime over the past six months?",
+    "expected_route": "sql_rag",
+    "rationale": "Time-series aggregation over maintenance records."
+  },
+  {
+    "id": "R-013",
+    "question": "Count the claims submitted by each billing executive.",
+    "expected_route": "sql_rag",
+    "rationale": "Group-by count over claim records."
+  },
+  {
+    "id": "R-014",
+    "question": "How many devices are due for calibration this week?",
+    "expected_route": "sql_rag",
+    "rationale": "Count over maintenance records with a date filter."
+  },
+  {
+    "id": "R-015",
+    "question": "What is the total reimbursement approved for orthopedics?",
+    "expected_route": "sql_rag",
+    "rationale": "Sum over approved claims by department."
+  },
+  {
+    "id": "R-016",
+    "question": "What is the treatment protocol for NSTEMI?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Documented clinical protocol — retrieved from documents."
+  },
+  {
+    "id": "R-017",
+    "question": "What is the Metformin dose for type 2 diabetes?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Drug information from the formulary document."
+  },
+  {
+    "id": "R-018",
+    "question": "How do I calibrate the X-ray unit?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Procedure from the equipment manual."
+  },
+  {
+    "id": "R-019",
+    "question": "What PPE is required for aerosol-generating procedures?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Nursing policy from documents."
+  },
+  {
+    "id": "R-020",
+    "question": "What does the NSTEMI billing package include?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Documented package contents — 'billing' word is a lure, no aggregation."
+  },
+  {
+    "id": "R-021",
+    "question": "What are the LASA drug pairs?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Clinical reference list from documents."
+  },
+  {
+    "id": "R-022",
+    "question": "What is the autoclave cycle temperature?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Equipment spec from the manual."
+  },
+  {
+    "id": "R-023",
+    "question": "What does fault code E-12 mean on the patient monitor?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Documented meaning of a code — not a count of occurrences."
+  },
+  {
+    "id": "R-024",
+    "question": "What are the ICU nursing procedures for CVC care?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Nursing procedure from documents."
+  },
+  {
+    "id": "R-025",
+    "question": "What is the ventilator initial tidal volume setting?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Documented device setting."
+  },
+  {
+    "id": "R-026",
+    "question": "What is the Dengue admission criteria?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Clinical criteria from documents."
+  },
+  {
+    "id": "R-027",
+    "question": "Explain the claim submission escalation matrix.",
+    "expected_route": "hybrid_rag",
+    "rationale": "Documented process from the claim-submission guide."
+  },
+  {
+    "id": "R-028",
+    "question": "What is the pre-authorization process for cardiac procedures?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Documented process — 'pre-auth' word is a lure, no data query."
+  },
+  {
+    "id": "R-029",
+    "question": "What is the hand hygiene policy?",
+    "expected_route": "hybrid_rag",
+    "rationale": "General policy document."
+  },
+  {
+    "id": "R-030",
+    "question": "What are the tier-4 restricted drugs?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Formulary reference list."
+  },
+  {
+    "id": "R-031",
+    "question": "What is the maximum daily dose of Atorvastatin?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Drug information from the formulary."
+  },
+  {
+    "id": "R-032",
+    "question": "How is the DriveFlow IP-200 infusion pump primed?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Procedure from the equipment manual."
+  },
+  {
+    "id": "R-033",
+    "question": "What is the average length of stay for NSTEMI patients?",
+    "expected_route": "sql_rag",
+    "rationale": "'average ... patients' = compute over patient/claim records. Boundary: LOS also appears as a documented 3-5 day range.",
+    "is_boundary": true
+  },
+  {
+    "id": "R-034",
+    "question": "What is the standard length of stay for NSTEMI per the treatment protocol?",
+    "expected_route": "hybrid_rag",
+    "rationale": "'per the protocol' = documented value. Minimal-contrast partner to R-033 — one phrase flips the route.",
+    "is_boundary": true
+  },
+  {
+    "id": "R-035",
+    "question": "How much does an NSTEMI admission cost on average across our hospitals?",
+    "expected_route": "sql_rag",
+    "rationale": "'on average across hospitals' = aggregate over claim records. Boundary vs the documented package rate.",
+    "is_boundary": true
+  },
+  {
+    "id": "R-036",
+    "question": "What is the NSTEMI package rate?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Documented figure in the billing-codes doc. 'rate' sounds numeric but it is a stated value, not a computation. Contrast to R-035.",
+    "is_boundary": true
+  },
+  {
+    "id": "R-037",
+    "question": "How long does pre-authorization usually take?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Documented SLA/turnaround in the claim guide. 'how long ... take' sounds analytical but the answer is a stated figure.",
+    "is_boundary": true
+  },
+  {
+    "id": "R-038",
+    "question": "What was the average pre-authorization turnaround we actually achieved last quarter?",
+    "expected_route": "sql_rag",
+    "rationale": "'actually achieved last quarter' = compute over records. Minimal-contrast partner to R-037.",
+    "is_boundary": true
+  },
+  {
+    "id": "R-039",
+    "question": "What is rejection reason code EXCL-01?",
+    "expected_route": "hybrid_rag",
+    "rationale": "Documented meaning of a code. 'rejection' sounds like claims data but this asks for the definition.",
+    "is_boundary": true
+  },
+  {
+    "id": "R-040",
+    "question": "How many claims were rejected under EXCL-01 last month?",
+    "expected_route": "sql_rag",
+    "rationale": "Count over claim records filtered by rejection code and period. Minimal-contrast partner to R-039.",
+    "is_boundary": true
+  }
+]

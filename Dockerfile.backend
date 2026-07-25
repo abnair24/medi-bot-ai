@@ -1,0 +1,45 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# System deps: build tools for sentence-transformers, libgomp for fastembed
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libgomp1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python deps first (layer-cached until requirements files change).
+# Dev/eval deps (pytest, deepeval) are included so the admin-only Evaluation
+# dashboard can run eval tracks in-container. They stay dormant unless
+# EVALS_ENABLED=true. Set EVAL_DEPS=false at build time to keep the image lean.
+ARG EVAL_DEPS=true
+COPY requirements.txt requirements-dev.txt ./
+# ORDERED install (see requirements-dev.txt header for the full rationale):
+# deepeval pins click<8.4.0 while huggingface-hub (base app) pins click>=8.4.2 — a hard
+# conflict that pip's strict resolver refuses to co-resolve. deepeval does NOT pull
+# huggingface-hub, so we install dev deps FIRST (click<8.4.0), then the base app which
+# bumps click to 8.4.2 — that emits a warning but succeeds, leaving both functional.
+# Order matters: base MUST be last so click lands at 8.4.2 for huggingface-hub.
+#
+# (CPU-only torch, ~4-5 GB smaller, is deferred — needs a pinned `torch==X.Y.Z+cpu`.)
+# --timeout/--retries harden against transient PyPI read-timeouts on large wheels
+# (torch/CUDA are ~1 GB). The BuildKit cache mount persists pip's download cache OUTSIDE
+# the image across build attempts, so a retry after a flaky timeout reuses already-fetched
+# wheels instead of re-downloading ~4 GB. (Cache mount != image layer, so no size cost.)
+ENV PIP_DEFAULT_TIMEOUT=300
+RUN --mount=type=cache,target=/root/.cache/pip \
+    if [ "$EVAL_DEPS" = "true" ]; then pip install --timeout 300 --retries 10 -r requirements-dev.txt; fi && \
+    pip install --timeout 300 --retries 10 -r requirements.txt
+
+# Copy all backend code: src/ (app), ingestion/ (ingest scripts + data), evals/ (harness).
+# ingestion/ includes data/ (docs + SQLite DB), so no separate data COPY is needed.
+COPY backend/ backend/
+COPY pytest.ini ./
+
+# /app/backend on the path so `from src...`, `from ingestion...`, `from evals...` resolve.
+ENV PYTHONPATH=/app/backend
+
+EXPOSE 8000
+
+CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,7 +1,11 @@
 # MediBot — Architecture
 
-> Component layout, adapter pattern, Pydantic boundaries, and folder structure.
-> Read this before writing code.
+> Component layout, LangGraph state machine, adapter pattern, Pydantic boundaries,
+> and folder structure. Read this before writing code.
+>
+> **Companion:** [`ARCHITECTURE_REVIEW.md`](ARCHITECTURE_REVIEW.md) — the forward-looking
+> design review (improvement backlog, portfolio-vs-prod judgment, deferred prod design,
+> findings log). This doc = *what is built*; the review = *what to build next and why*.
 
 ---
 
@@ -12,20 +16,28 @@ User → Login (JWT) → /chat
                         │
                    extract role from JWT
                         │
-                   SEMANTIC ROUTER (LLM)
-                   ┌────┴────┐
-              ANALYTICAL   KNOWLEDGE
-                   │            │
-              SQL RAG      HYBRID RETRIEVAL
-              (gated to       │
-              billing/admin)  ├─ 1. generate dense + sparse embeddings
-                   │          ├─ 2. RBAC metadata filter (access_roles)
-                   │          ├─ 3. Qdrant hybrid query (dense + BM25)
-                   │          ├─ 4. cross-encoder rerank (top-10 → top-3)
-                   │          └─ 5. LLM generates answer from top-3
-                   │                     │
-                   └─────────┬───────────┘
-                        response: answer + sources + retrieval_type
+               LANGGRAPH STATE GRAPH
+               ┌────────────────────────────────────────────┐
+               │  State: {question, role, history, route,  │
+               │         chunks, answer, proposed_sql}     │
+               ├────────────────────────────────────────────┤
+               │  REWRITE NODE (if follow-up question)     │
+               │       │                                   │
+               │  ROUTER NODE (LLM)                        │
+               │  ┌────┴────┐                               │
+               │ ANALYTICAL  KNOWLEDGE                     │
+               │  │            │                            │
+               │ SQL_PROPOSE RETRIEVE → RERANK → GENERATE  │
+               │  │                                        │
+               │ interrupt() ←─ HITL pause                 │
+               │  │ (user approves/rejects)                │
+               │ SQL_EXECUTE → NARRATE                     │
+               │       │                                   │
+               │  RESPONSE NODE                             │
+               └───────────┴────────────────────────────────┘
+                        │
+               response: answer + sources + retrieval_type
+               (state persisted via SqliteSaver for multi-turn)
 ```
 
 ---
@@ -35,10 +47,10 @@ User → Login (JWT) → /chat
 Two paths through the system: **ingestion** (offline, run once) and **query** (per request).
 Different models serve different jobs — none of them is "the LLM."
 
-### 2.1 Ingestion path (scripts/ingest.py → Qdrant)
+### 2.1 Ingestion path (backend/ingestion/ingest.py → Qdrant)
 
 ```
-PDF / MD files (data/docs/)
+PDF / MD files (backend/ingestion/data/docs/)
      │
      ▼
 DOCLING  (document parser — not a model, a parser library)
@@ -213,66 +225,50 @@ call). That's a later extension, not a foundation.
 ```
 medibot/
 ├── INSTRUCTIONS.md
-├── ARCHITECTURE.md
-├── EVAL_PLAN.md
-├── GOLDEN_SET.md
-├── RBAC_REDTEAM.md
-├── DATA_DICTIONARY.md
-├── PROMPTS.md
-├── DEPLOY.md
+├── CLAUDE.md
 ├── docker-compose.yml
+├── pytest.ini                        # pythonpath = backend; testpaths = backend/evals
+├── requirements.txt
 ├── .github/
 │   └── workflows/
-│       └── eval.yml              # CI gate — runs evals on push
-├── data/
-│   ├── docs/                     # source PDFs + MD (git-tracked)
-│   └── mediassist.db             # SQLite (git-tracked, small)
-├── scripts/
-│   └── ingest.py                 # standalone ingestion — run once
-├── src/
-│   ├── api/
-│   │   ├── app.py                # FastAPI app, mount routers
-│   │   ├── chat_router.py        # /chat, /collections, /health
-│   │   └── auth_router.py        # /login, JWT
-│   ├── services/
-│   │   ├── retrieval_service.py  # hybrid retrieve + RBAC filter
-│   │   ├── rerank_service.py     # cross-encoder rerank
-│   │   ├── generation_service.py # LLM answer from chunks
-│   │   ├── sql_rag_service.py    # text-to-SQL chain
-│   │   └── router_service.py     # semantic route decision
-│   ├── adapters/
-│   │   ├── qdrant_adapter.py     # vector store operations
-│   │   ├── embedding_adapter.py  # dense embedding
-│   │   ├── sparse_adapter.py     # sparse (FastEmbed)
-│   │   ├── llm_adapter.py        # LLM calls (Groq / Claude / etc)
-│   │   ├── reranker_adapter.py   # cross-encoder
-│   │   └── sql_adapter.py        # SQLite operations
-│   ├── models/
-│   │   ├── schemas.py            # Pydantic request/response models
-│   │   ├── chunk.py              # ChunkMetadata model
-│   │   └── auth.py               # User, TokenPayload models
-│   ├── security/
-│   │   └── jwt.py                # JWT encode/decode, role extraction
-│   ├── config/
-│   │   └── settings.py           # env-based config (pydantic-settings)
-│   └── utils/
-│       ├── logger.py             # structured logging
-│       └── helpers.py
+│       └── eval.yml                  # CI gate — runs evals on push
+├── docs/                             # ARCHITECTURE.md, EVAL_PLAN.md, PROMPTS.md, …
 ├── frontend/
-│   └── app.py                    # Streamlit — Tab 1 (demo) + Tab 2 (eval)
-├── evals/
-│   ├── golden/
-│   │   ├── factual.json          # golden Q&A cases
-│   │   ├── adversarial.json      # RBAC red-team cases
-│   │   └── sql.json              # SQL-RAG golden cases
-│   ├── test_retrieval.py         # P@3, MRR, hybrid vs dense
-│   ├── test_rbac.py              # leak-rate matrix, fail-closed
-│   ├── test_sql.py               # SQL correctness
-│   ├── test_routing.py           # confusion matrix
-│   ├── test_faithfulness.py      # DeepEval judge metrics
-│   ├── test_chunk_quality.py     # parent heading, table integrity
-│   └── conftest.py               # shared fixtures, adapter injection
-└── requirements.txt
+│   └── app.py                        # Streamlit — Tab 1 (demo) + Tab 2 (eval)
+└── backend/                          # everything importable lives here (PYTHONPATH=backend)
+    ├── src/                          # FastAPI app — imported as `from src...`
+    │   ├── graph/                    # LangGraph orchestration layer
+    │   │   ├── state.py              # MediBotState TypedDict
+    │   │   ├── nodes.py              # node functions (call services)
+    │   │   ├── edges.py              # conditional edge functions
+    │   │   └── builder.py            # build_graph() — assemble + compile
+    │   ├── api/
+    │   │   ├── app.py                # FastAPI app, mount routers, compile graph
+    │   │   ├── chat_router.py        # /chat, /chat/resume, /collections, /health
+    │   │   ├── eval_router.py        # /evals/run, /evals/status, /evals/results (admin)
+    │   │   └── auth_router.py        # /login, JWT
+    │   ├── services/                 # retrieval, rerank, generation, sql_rag, router,
+    │   │   │                         #   rewrite, hyde, denial, safety_guard, eval
+    │   │   └── …
+    │   ├── adapters/                 # qdrant, embedding, sparse, reranker, llm, sql
+    │   ├── models/                   # schemas.py, chunk.py, auth.py
+    │   ├── security/jwt.py           # JWT encode/decode, role extraction
+    │   ├── config/                   # settings.py (pydantic-settings), access.py
+    │   └── utils/                    # logger.py, helpers.py, exceptions.py
+    ├── ingestion/                    # imported as `from ingestion...`
+    │   ├── ingest.py                 # standalone ingestion — run once
+    │   ├── ensure_ingested.py        # idempotent ingest (compose `ingest` service entrypoint)
+    │   ├── run_evals.py              # headless full-suite eval runner (manual / CI)
+    │   └── data/
+    │       ├── docs/                 # source PDFs + MD (git-tracked)
+    │       ├── mediassist.db         # SQLite — app data (git-tracked, small)
+    │       └── checkpoints.db        # SQLite — LangGraph state (gitignored)
+    └── evals/                        # imported as `from evals...`
+        ├── golden/                   # factual, adversarial, sql, numbers, safety, routing …
+        ├── results/                  # JUnit XML + logs (gitignored)
+        ├── conftest.py               # shared fixtures, adapter injection
+        └── test_*.py                 # rbac, safety, chunk_quality, routing, sql,
+                                      #   retrieval, numbers, faithfulness, calibration
 ```
 
 ---
@@ -311,7 +307,7 @@ Ingestion:            ChunkMetadata                     → chunk.py
 Router decision:      RouteDecision                     → schemas.py
 SQL output:           SQLResult                         → schemas.py
 Auth:                 User, TokenPayload                → auth.py
-Golden set:           GoldenCase, AdversarialCase        → evals/conftest.py
+Golden set:           GoldenCase, AdversarialCase        → backend/evals/conftest.py
 Config:               Settings (pydantic-settings)       → settings.py
 ```
 
@@ -387,7 +383,7 @@ The settings default `jwt_secret = "change-this-in-production"` will be forgotte
 deployed environments. Add a startup guard in `app.py`:
 
 ```python
-# In src/api/app.py — lifespan or startup event
+# In backend/src/api/app.py — lifespan or startup event
 if settings.jwt_secret == "change-this-in-production":
     if os.getenv("ENVIRONMENT", "dev") != "dev":
         raise RuntimeError("JWT_SECRET must be changed in non-dev environments")
@@ -438,7 +434,7 @@ async def generate(self, prompt: str) -> str:
 **2. Request-level rate limiting on the FastAPI app:**
 
 ```python
-# In src/api/app.py — use a simple middleware or dependency
+# In backend/src/api/app.py — use a simple middleware or dependency
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 

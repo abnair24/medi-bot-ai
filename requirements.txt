@@ -1,0 +1,47 @@
+# --- Logging ---
+python-json-logger>=2.0.7
+
+# --- Core framework ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-multipart>=0.0.9
+
+# --- LangGraph orchestration ---
+langgraph>=0.2.0
+langchain-core>=0.2.0
+langgraph-checkpoint-sqlite>=1.0.0
+
+# --- Vector store ---
+qdrant-client>=1.9.0
+
+# --- Embedding & reranker (local models, no API cost) ---
+sentence-transformers>=3.0.0
+fastembed>=0.3.0
+
+# --- Document parsing & chunking ---
+docling>=2.5.0
+
+# --- LLM (Groq) ---
+groq>=0.9.0
+tenacity>=8.3.0
+httpx>=0.27.0
+
+# --- Auth ---
+PyJWT>=2.8.0
+
+# --- SQL ---
+aiosqlite>=0.20.0
+
+# --- Frontend ---
+streamlit>=1.36.0
+requests>=2.32.0
+
+# --- Numerics (used at runtime by ML libs; also by deterministic eval tracks) ---
+numpy>=1.26.0
+
+# NOTE: eval + dev tooling (deepeval, pytest, ruff, mypy) lives in requirements-dev.txt.
+# It is intentionally NOT installed in the runtime Docker image — this keeps the image
+# lean AND keeps deepeval's `click<8.4.0` pin out of production, where huggingface-hub
+# requires `click>=8.4.2`. See BUG-15.

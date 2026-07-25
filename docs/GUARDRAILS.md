@@ -8,7 +8,7 @@
 
 ## 1. MediBot is a retrieval tool, not a medical advisor
 
-MediBot retrieves and presents information from MediAssist's internal documents. It does
+MediBot retrieves and presents information from the network's internal documents. It does
 not practise medicine. This distinction governs everything below.
 
 ---
@@ -54,7 +54,7 @@ more dangerous than no answer.
 
 ### On clinical answers
 Every answer drawn from clinical or nursing collections must end with:
-> *This information is from MediAssist internal protocols. Always apply clinical
+> *This information is from internal protocols. Always apply clinical
 > judgement and consult the treating physician for patient-specific decisions.*
 
 ### On drug information
@@ -79,8 +79,8 @@ of the retrieved chunks:
 
 ```python
 DISCLAIMERS = {
-    "clinical": "This information is from MediAssist internal protocols...",
-    "nursing": "This information is from MediAssist internal protocols...",
+    "clinical": "This information is from internal protocols...",
+    "nursing": "This information is from internal protocols...",
     # billing, equipment, general: no medical disclaimer needed
 }
 ```
@@ -97,7 +97,7 @@ Beyond RBAC (which handles access control), MediBot must handle:
 |---|---|---|
 | Asking for a diagnosis | "My patient has X, Y, Z — what is it?" | State relevant protocol criteria with citation; never conclude a diagnosis |
 | Asking for a prescription | "What should I prescribe for this patient?" | State protocol first-line with citation + prescribing disclaimer |
-| Requesting off-label advice | "Can I use Drug X for condition Y?" | Only answer if the formulary or protocol covers it; otherwise say "not found in MediAssist protocols" |
+| Requesting off-label advice | "Can I use Drug X for condition Y?" | Only answer if the formulary or protocol covers it; otherwise say "not found in internal protocols" |
 | Emotional / urgent framing | "Patient is crashing, what do I do?" | State the relevant emergency protocol + emergency disclaimer; never simulate triage |
 
 ---

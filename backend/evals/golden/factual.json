@@ -1,0 +1,104 @@
+[
+  {
+    "id": "F-001",
+    "question": "What is the billing package for diagnosis code I21.4?",
+    "keyword_heavy": true,
+    "expected": [
+      {"source_document": "billing_codes.pdf", "section_title": "1. Top 30 Diagnosis Codes Used at MediAssist"}
+    ]
+  },
+  {
+    "id": "F-002",
+    "question": "What does fault code E-12 mean on the patient monitor and what action is required?",
+    "keyword_heavy": true,
+    "expected": [
+      {"source_document": "equipment_manual.pdf", "section_title": "E. Maintenance & Fault-Code Summary"},
+      {"source_document": "equipment_manual.pdf", "section_title": "Fault codes"},
+      {"source_document": "equipment_manual.pdf", "section_title": "Remove from service"}
+    ]
+  },
+  {
+    "id": "F-003",
+    "question": "Which cannula size, such as 24G, is used for which indication?",
+    "keyword_heavy": true,
+    "expected": [
+      {"source_document": "icu_nursing_procedures.pdf", "section_title": "Cannula sizing by indication"}
+    ]
+  },
+  {
+    "id": "F-004",
+    "question": "What is rejection code EXCL-03 and why is a claim rejected under it?",
+    "keyword_heavy": true,
+    "expected": [
+      {"source_document": "billing_codes.pdf", "section_title": "4. Exclusions Reference"},
+      {"source_document": "claim_submission_guide.md", "section_title": "4.1 Common rejection codes"}
+    ]
+  },
+  {
+    "id": "F-005",
+    "question": "What is the recommended dose of Piperacillin-Tazobactam?",
+    "keyword_heavy": true,
+    "expected": [
+      {"source_document": "drug_formulary.pdf", "section_title": "1. Antimicrobials"},
+      {"source_document": "treatment_protocols.pdf", "section_title": "Antimicrobial therapy"}
+    ]
+  },
+  {
+    "id": "F-006",
+    "question": "What is the treatment protocol for an NSTEMI heart attack?",
+    "keyword_heavy": false,
+    "expected": [
+      {"source_document": "treatment_protocols.pdf", "section_title": "Immediate management (first 60 minutes)"},
+      {"source_document": "treatment_protocols.pdf", "section_title": "Risk stratification"},
+      {"source_document": "treatment_protocols.pdf", "section_title": "D. Acute Myocardial Infarction - NSTEMI"}
+    ]
+  },
+  {
+    "id": "F-007",
+    "question": "What are the initial ventilator settings, including tidal volume?",
+    "keyword_heavy": false,
+    "expected": [
+      {"source_document": "icu_nursing_procedures.pdf", "section_title": "Initial settings"}
+    ]
+  },
+  {
+    "id": "F-008",
+    "question": "How should the Metformin dose be adjusted for renal impairment?",
+    "keyword_heavy": false,
+    "expected": [
+      {"source_document": "drug_formulary.pdf", "section_title": "6. Renal Dose Adjustment (selected drugs)"}
+    ]
+  },
+  {
+    "id": "F-009",
+    "question": "What are the five moments of hand hygiene?",
+    "keyword_heavy": false,
+    "expected": [
+      {"source_document": "infection_control.pdf", "section_title": "1. Five Moments of Hand Hygiene"}
+    ]
+  },
+  {
+    "id": "F-010",
+    "question": "What are the common operator errors when running the autoclave?",
+    "keyword_heavy": false,
+    "expected": [
+      {"source_document": "equipment_manual.pdf", "section_title": "I. Common Operator Errors & Troubleshooting"}
+    ]
+  },
+  {
+    "id": "F-011",
+    "question": "What dispensing safety measures cover look-alike sound-alike drugs?",
+    "keyword_heavy": false,
+    "expected": [
+      {"source_document": "drug_formulary.pdf", "section_title": "Dispensing safety"}
+    ]
+  },
+  {
+    "id": "F-012",
+    "question": "What is the policy on accepting gifts and gratuity from vendors?",
+    "keyword_heavy": false,
+    "expected": [
+      {"source_document": "code_of_conduct.pdf", "section_title": "5. Gifts & Gratuity"}
+    ]
+  }
+]

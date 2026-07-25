@@ -3,10 +3,10 @@
 
 ## No hardcoded values
 
-- All configuration comes from pydantic-settings (src/config/settings.py).
+- All configuration comes from pydantic-settings (backend/src/config/settings.py).
 - Model names, top-k values, thresholds, ports, paths — everything is in Settings.
 - Magic strings are forbidden. Use Literal types and typed constants.
-- Role-collection access map is defined once in src/config/access.py.
+- Role-collection access map is defined once in backend/src/config/access.py.
 - .env.example is committed; .env is gitignored.
 
 ## Design principles
@@ -32,9 +32,16 @@
 
 ## Adapter pattern
 
-- External deps accessed only through adapters in src/adapters/.
+- External deps accessed only through adapters in backend/src/adapters/.
 - Service code imports adapters, never vendor SDKs directly.
 - Adapters are injected so tests can substitute fakes.
+
+## LangGraph orchestration
+
+- Three-layer rule: graph nodes → services → adapters. Each layer only calls the next.
+- Nodes never import vendor SDKs directly. Nodes call services.
+- State mutations only through node return values (partial dicts), never side-effects.
+- Graph is compiled once at startup, not per-request.
 
 ## Naming and structure
 

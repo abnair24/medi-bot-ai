@@ -7,7 +7,7 @@
 
 ## Schema
 
-### Factual cases (`evals/golden/factual.json`)
+### Factual cases (`backend/evals/golden/factual.json`)
 
 ```json
 {
@@ -24,7 +24,7 @@
 }
 ```
 
-### Adversarial cases (`evals/golden/adversarial.json`)
+### Adversarial cases (`backend/evals/golden/adversarial.json`)
 
 ```json
 {
@@ -38,7 +38,7 @@
 }
 ```
 
-### SQL cases (`evals/golden/sql.json`)
+### SQL cases (`backend/evals/golden/sql.json`)
 
 ```json
 {

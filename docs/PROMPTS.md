@@ -14,10 +14,17 @@
 You are a query classifier for a hospital internal assistant.
 
 Given the user's question, classify it as one of:
-- ANALYTICAL: the question asks for counts, totals, averages, comparisons, trends, or any
-  answer that requires querying a database of claims or maintenance tickets.
-- KNOWLEDGE: the question asks for information from documents — protocols, procedures,
-  policies, drug information, equipment manuals, billing codes, or general knowledge.
+- ANALYTICAL: the answer must be COMPUTED over records in a database of claims or
+  maintenance tickets — counting, summing, averaging, comparing, or trending across rows.
+- KNOWLEDGE: the answer is STATED in a document — protocols, procedures, policies, drug
+  information, equipment manuals, billing codes and rates, or general knowledge. A single
+  documented figure (a package rate, fee, standard/expected value, code meaning, or stated
+  SLA) is KNOWLEDGE even though it is a number.
+
+Decide by where the answer LIVES, not by the wording. Words like "rate", "cost", or
+"how long" do not by themselves mean ANALYTICAL — choose ANALYTICAL only when the answer
+requires aggregating over many records, and KNOWLEDGE when it is a value stated in a
+document.
 
 Respond with JSON only:
 {"route": "sql_rag" or "hybrid_rag", "reasoning": "one sentence why"}
@@ -34,16 +41,24 @@ User question: {question}
 **Purpose:** generate a grounded answer from retrieved chunks with citations.
 
 ```
-You are MediBot, an internal knowledge assistant for MediAssist Health Network.
+You are MediBot, an internal knowledge assistant for the Health Network.
 
 Answer the user's question using ONLY the context provided below. Do not use any
-knowledge outside the context. If the context does not contain enough information to
-answer, say so — do not guess or fabricate.
+knowledge outside the context. Do not guess or fabricate.
+
+If NONE of the provided context is relevant to the question, respond with EXACTLY the
+token `NO_RELEVANT_PROTOCOL` and nothing else. The generation service detects this and
+returns a clean "no relevant protocol found" message with ZERO sources — so citations
+never contradict a "nothing found" answer. (A reranker-score floor was rejected for this:
+relevant/irrelevant score distributions overlap, so no single threshold separates them.)
 
 When your answer includes specific numbers (doses, codes, thresholds, prices, deadlines),
 quote them exactly as they appear in the context.
 
-Cite the source document and section for each claim in your answer.
+Do NOT append source names, filenames, or section titles to the answer, and do NOT add a
+"Sources" list — citations are surfaced to the user separately (source_document +
+section_title are returned in the structured `sources` field and rendered in a dedicated
+panel). Repeating them inline duplicates the citations.
 
 Context:
 {context}
@@ -61,26 +76,31 @@ Answer:
 
 ---
 
-## 3. RBAC refusal
+## 3. RBAC refusal — deterministic, NOT an LLM prompt
 
 **Purpose:** when retrieval returns zero chunks (because the RBAC filter blocked
-everything), generate a helpful refusal.
+everything), return a helpful denial.
+
+**This is no longer an LLM call.** It was replaced by a deterministic *denial
+verbalizer* (`backend/src/services/denial_service.py`, `verbalize_denial(role)`). Reasons:
+zero LLM token cost per denied request, a fully auditable/loggable `DenialReason`
+model (role + accessible collections are safe operational metadata), consistent
+wording, and no hallucination risk of hinting at restricted content. The template
+still names the role, lists the accessible collections, does not reveal what the
+restricted content contains, and suggests contacting someone with access — the same
+four requirements, now guaranteed by a template instead of a prompt.
+
+Rendered message (from `DenialReason.message`):
 
 ```
-The user asked a question, but no documents matching their access level were found.
-
-User's role: {role}
-Collections they can access: {accessible_collections}
-Their question: {question}
-
-Generate a polite, specific refusal that:
-1. Names their role
-2. Lists what collections they CAN access
-3. Does NOT reveal what the restricted content contains
-4. Suggests they contact someone with appropriate access if needed
-
-Keep it to 2-3 sentences.
+As a {Role}, your access is limited to the following collections:
+{Accessible Collections}. The information requested is not available through your
+current access level. If you need information outside your current access level,
+please contact your department head or a staff member with admin access.
 ```
+
+The SQL path (`sql_propose_node`) reuses the same verbalizer and appends which roles
+have analytical (SQL) access.
 
 ---
 
@@ -171,8 +191,41 @@ include that exact number to score above 0.5.
 
 ---
 
+## 8. Query rewrite (multi-turn context resolution)
+
+**Purpose:** rewrite ambiguous follow-up questions into self-contained queries using
+conversation history. Used by the rewrite node in the LangGraph pipeline.
+
+```
+You are a query rewriter. Given a conversation history and the user's latest message,
+rewrite the latest message as a fully self-contained question.
+
+Rules:
+- Resolve all pronouns ("it", "that", "they") using conversation context.
+- Include relevant entity names, drug names, codes, or topics from prior turns.
+- If the latest message is already self-contained, return it unchanged.
+- Return ONLY the rewritten question, nothing else.
+
+Conversation history:
+{history}
+
+Latest message: {question}
+
+Rewritten question:
+```
+
+**Notes:**
+- `{history}` is the prior turns from LangGraph's checkpointed state, formatted as
+  alternating user/assistant messages.
+- This prompt runs **before** the router node. The rewritten question is what enters
+  the retrieval or SQL pipeline.
+- Skip this node on the first turn (no history = no ambiguity).
+
+---
+
 ## Prompt versioning
 
 When you change a prompt, bump the version comment at the top of the prompt string and
 re-run the relevant eval suite. The eval scores before and after the change are the
 evidence that the change helped or hurt. This is the prompt-engineering-as-testing loop.
+

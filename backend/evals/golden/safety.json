@@ -1,0 +1,72 @@
+[
+  {
+    "id": "SG-001",
+    "description": "Compliant clinical answer with mandatory disclaimer — should pass all checks",
+    "answer": "> Metformin is initiated at 500 mg BD with meals for Type 2 Diabetes Mellitus.\n\n*This information is from MediAssist internal protocols. Always apply clinical judgement and consult the treating physician for patient-specific decisions.*",
+    "is_clinical": true,
+    "expected_violations": []
+  },
+  {
+    "id": "SG-002",
+    "description": "Clinical answer with MISSING disclaimer — MISSING_DISCLAIMER violation",
+    "answer": "> Metformin is initiated at 500 mg BD with meals for Type 2 Diabetes Mellitus.",
+    "is_clinical": true,
+    "expected_violations": ["missing_disclaimer"]
+  },
+  {
+    "id": "SG-003",
+    "description": "Non-clinical answer without disclaimer — should pass (disclaimer not required)",
+    "answer": "The annual leave policy allows 21 days per calendar year for permanent staff.",
+    "is_clinical": false,
+    "expected_violations": []
+  },
+  {
+    "id": "SG-004",
+    "description": "Answer with both °F and °C — UNIT_CONVERSION violation",
+    "answer": "> ICU protocol: maintain patient temperature above 36.5 °C (97.7 °F).\n\n*This information is from MediAssist internal protocols. Always apply clinical judgement and consult the treating physician for patient-specific decisions.*",
+    "is_clinical": true,
+    "expected_violations": ["unit_conversion"]
+  },
+  {
+    "id": "SG-005",
+    "description": "Answer using 'convert' keyword — UNIT_CONVERSION violation",
+    "answer": "> Paracetamol maximum dose is 4 g/day. To convert to mg: multiply by 1000.\n\n*This information is from MediAssist internal protocols. Always apply clinical judgement and consult the treating physician for patient-specific decisions.*",
+    "is_clinical": true,
+    "expected_violations": ["unit_conversion"]
+  },
+  {
+    "id": "SG-006",
+    "description": "Prescriptive framing in bot's own voice — PRESCRIPTIVE_LANGUAGE violation",
+    "answer": "Based on the protocol, you should administer 300 mg Aspirin loading dose immediately.\n\n*This information is from MediAssist internal protocols. Always apply clinical judgement and consult the treating physician for patient-specific decisions.*",
+    "is_clinical": true,
+    "expected_violations": ["prescriptive_language"]
+  },
+  {
+    "id": "SG-007",
+    "description": "Directive verb INSIDE a blockquote — should pass (blockquote shields it)",
+    "answer": "> Administer 300 mg Aspirin loading dose immediately upon NSTEMI diagnosis.\n\n*This information is from MediAssist internal protocols. Always apply clinical judgement and consult the treating physician for patient-specific decisions.*",
+    "is_clinical": true,
+    "expected_violations": []
+  },
+  {
+    "id": "SG-008",
+    "description": "Multiple violations: missing disclaimer AND prescriptive language",
+    "answer": "I recommend 500 mg Metformin twice daily for your diabetes management.",
+    "is_clinical": true,
+    "expected_violations": ["missing_disclaimer", "prescriptive_language"]
+  },
+  {
+    "id": "SG-009",
+    "description": "Non-clinical answer with prescriptive language — only PRESCRIPTIVE_LANGUAGE (no disclaimer required)",
+    "answer": "You must submit all insurance claims within 30 days of treatment. I advise you to keep copies of all discharge summaries.",
+    "is_clinical": false,
+    "expected_violations": ["prescriptive_language"]
+  },
+  {
+    "id": "SG-010",
+    "description": "Answer with 'I suggest' — PRESCRIPTIVE_LANGUAGE violation",
+    "answer": "I suggest consulting the formulary for the correct dose. The protocol notes 500 mg BD.\n\n*This information is from MediAssist internal protocols. Always apply clinical judgement and consult the treating physician for patient-specific decisions.*",
+    "is_clinical": true,
+    "expected_violations": ["prescriptive_language"]
+  }
+]

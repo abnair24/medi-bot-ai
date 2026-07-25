@@ -10,7 +10,7 @@
 ### Use pydantic-settings for all configuration
 
 ```python
-# src/config/settings.py
+# backend/src/config/settings.py
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 10
 
     # SQL
-    sqlite_path: str = "data/mediassist.db"
+    sqlite_path: str = "backend/ingestion/data/mediassist.db"
 
     # Auth
     jwt_secret: str = "change-this-in-production"
@@ -79,7 +79,7 @@ COLLECTION_NAME=medibot
 DENSE_MODEL_NAME=BAAI/bge-small-en-v1.5
 RERANKER_TOP_K=10
 RERANKER_FINAL_K=3
-SQLITE_PATH=data/mediassist.db
+SQLITE_PATH=backend/ingestion/data/mediassist.db
 JWT_SECRET=change-this-in-production
 LOG_LEVEL=INFO
 ```
@@ -107,7 +107,7 @@ ChunkType = Literal["text", "table", "heading", "code"]
 ### Role-collection access map — defined once, not scattered
 
 ```python
-# src/config/access.py
+# backend/src/config/access.py
 ROLE_COLLECTIONS: dict[str, list[str]] = {
     "doctor": ["clinical", "nursing", "general"],
     "nurse": ["nursing", "general"],
@@ -166,7 +166,7 @@ Adapters expose only what the service needs. The Qdrant adapter exposes `search(
 `insert()`, not the entire Qdrant client API.
 
 ```python
-# src/adapters/qdrant_adapter.py
+# backend/src/adapters/qdrant_adapter.py
 class QdrantAdapter:
     def __init__(self, host: str, port: int, collection: str):
         self._client = QdrantClient(host=host, port=port)
@@ -216,6 +216,44 @@ Apply this in retrieval_service (embedding), rerank_service (cross-encoder), and
 ingestion_service (batch embedding). Groq API calls are I/O-bound and should use
 native async (`httpx.AsyncClient` or the SDK's async method).
 
+### LangGraph patterns
+
+**Three-layer rule:** graph nodes → services → adapters. Each layer only calls the next.
+
+```python
+# WRONG — node imports vendor SDK directly
+def retrieve_node(state: MediBotState) -> dict:
+    client = QdrantClient("localhost", port=6333)  # vendor SDK in node!
+    results = client.search(...)
+
+# WRONG — node skips service layer
+def retrieve_node(state: MediBotState) -> dict:
+    results = qdrant_adapter.hybrid_search(...)  # skipping service!
+
+# RIGHT — node calls service, service calls adapter
+def retrieve_node(state: MediBotState) -> dict:
+    chunks = retrieval_service.search(state["question"], state["role"])
+    return {"chunks": chunks}
+```
+
+**State mutations via return values only.** Nodes return a partial dict that gets
+merged into state. Never mutate state in-place or via side effects:
+
+```python
+# WRONG — mutating state directly
+def generate_node(state: MediBotState) -> dict:
+    state["answer"] = llm.generate(...)  # side effect!
+    return state
+
+# RIGHT — return partial update
+def generate_node(state: MediBotState) -> dict:
+    answer = generation_service.generate(state["question"], state["chunks"])
+    return {"answer": answer}  # LangGraph merges this into state
+```
+
+**Graph testing:** test nodes in isolation by passing a fake state dict. Test the
+compiled graph end-to-end for integration.
+
 ---
 
 ## 4. Error handling
@@ -240,7 +278,7 @@ except QdrantException as e:
 ### Use custom exceptions, not bare Exception
 
 ```python
-# src/utils/exceptions.py
+# backend/src/utils/exceptions.py
 class MediBotError(Exception):
     """Base exception for all MediBot errors."""
 
@@ -262,7 +300,7 @@ class RoutingError(MediBotError):
 Map custom exceptions to HTTP responses in one place:
 
 ```python
-# src/api/app.py
+# backend/src/api/app.py
 @app.exception_handler(RBACError)
 async def rbac_handler(request, exc):
     return JSONResponse(status_code=403, content={"detail": str(exc)})
@@ -378,8 +416,8 @@ def hybrid_search(self, query: str, role: str) -> list[ChunkResult]:
 ## 8. Testing conventions
 
 - Unit tests in `tests/` — mock adapters, test service logic.
-- Eval tests in `evals/` — real adapters, test system behavior against golden set.
-- Test files mirror source: `src/services/retrieval_service.py` →
+- Eval tests in `backend/evals/` — real adapters, test system behavior against golden set.
+- Test files mirror source: `backend/src/services/retrieval_service.py` →
   `tests/test_retrieval_service.py`.
 - Use pytest fixtures for adapter injection, not setup/teardown methods.
 - Test names describe the behavior: `test_nurse_cannot_retrieve_billing_chunks`,

@@ -1,0 +1,97 @@
+services:
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      # Host 6335 -> container 6333. Remapped off the default 6333 to avoid colliding
+      # with another project's Qdrant on this machine. Container-internal port stays
+      # 6333 (Qdrant's default) — inter-container traffic is unaffected by this mapping.
+      # Port 6000 was blocked by browsers (X11 reserved port).
+      - "6335:6333"
+    volumes:
+      # Bind mount to a real host path (starts with ./) instead of a Docker-managed
+      # named volume — survives `docker … prune --volumes` even when the container is
+      # down. Tradeoff: FUSE/virtiofs latency on Docker Desktop for Mac vs. native VM ext4.
+      - ./qdrant_data:/qdrant/storage
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      # Host 8001 -> container 8000. Remapped off 8000 to avoid colliding with another
+      # project's backend already bound to host 8000. Container-internal port stays 8000;
+      # frontend reaches it via http://backend:8000 (service name), unaffected by this.
+      - "8001:8000"
+    env_file: .env                      # loads all .env vars
+    environment:
+      - QDRANT_HOST=qdrant              # override .env localhost — use Docker service name
+      - QDRANT_PORT=6333               # override .env 6000 — inter-container uses the
+                                        # internal port, not the host-remapped one
+      - EVALS_ENABLED=true              # mount admin-only /evals/* eval dashboard
+    volumes:
+      - ./backend/ingestion/data:/app/backend/ingestion/data  # SQLite DB + checkpoints persist on host
+      - ./backend/evals/results:/app/backend/evals/results    # eval reports persist + host-visible
+      - hf_cache:/root/.cache/huggingface  # HuggingFace models cached across rebuilds
+    depends_on:
+      qdrant:
+        condition: service_started
+      # Wait for one-shot ingestion to FINISH before serving, so the vector index is
+      # populated on first `up` — no empty-retrieval race. On a persisted volume the
+      # ingest container sees a non-empty collection and exits fast.
+      ingest:
+        condition: service_completed_successfully
+    # /health is served only AFTER lifespan startup (model load + graph build) finishes,
+    # so a passing healthcheck means the API is genuinely ready — not just "container up".
+    # start_period covers first-boot model download (cached in hf_cache thereafter); the
+    # retries×interval window then allows a slow-but-normal startup before marking unhealthy.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8700:8700"
+    env_file: .env
+    environment:
+      - MEDIBOT_API_URL=http://backend:8000  # override — use Docker service name
+    # Wait for the backend to pass its healthcheck before starting — this closes the
+    # startup race where the frontend loaded and "Cannot reach MediBot API" appeared
+    # because the backend was still loading models. The UI is only served once the API
+    # is actually ready to answer /login.
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # One-shot ingestion. Populates Qdrant from data/docs/ ONLY when the collection is
+  # empty (a fresh qdrant_data volume), then EXITS (restart: "no"). The backend depends
+  # on this completing successfully, so the vector index is ready before the API serves.
+  # On a persisted volume it sees a non-empty collection and exits immediately.
+  #
+  # Reuses the backend image (same Dockerfile) for the adapters + ingestion script.
+  # Evals are NOT run here — they run on demand from the admin Evaluation tab (the
+  # backend's /evals/run endpoint), so app startup stays fast and spends no LLM tokens.
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file: .env
+    environment:
+      - QDRANT_HOST=qdrant             # Docker service name, not host localhost
+      - QDRANT_PORT=6333               # inter-container uses Qdrant's internal port
+    volumes:
+      - ./backend/ingestion/data:/app/backend/ingestion/data  # source docs + SQLite DB
+      - hf_cache:/root/.cache/huggingface   # embedding models cached, shared with backend
+    depends_on:
+      - qdrant
+    restart: "no"                       # one-shot: ingest-if-empty, then exit
+    command: ["python", "backend/ingestion/ensure_ingested.py"]
+
+volumes:
+  hf_cache:                             # persists bge-small + cross-encoder downloads

@@ -1,0 +1,66 @@
+[
+  {
+    "id": "S-001",
+    "question": "How many claims are escalated?",
+    "role": "billing_executive",
+    "expected_sql_keywords": ["claims", "escalated"],
+    "expected_answer_contains": ["8"],
+    "expected_row_count": 1
+  },
+  {
+    "id": "S-002",
+    "question": "Which department has the most claims?",
+    "role": "billing_executive",
+    "expected_sql_keywords": ["claims", "department"],
+    "expected_answer_contains": ["cardiology", "20"],
+    "expected_row_count": null
+  },
+  {
+    "id": "S-003",
+    "question": "What is the total approved claim amount across all claims?",
+    "role": "billing_executive",
+    "expected_sql_keywords": ["approved_amount", "claims"],
+    "expected_answer_contains": ["2442700", "24,42,700"],
+    "expected_row_count": 1
+  },
+  {
+    "id": "S-004",
+    "question": "What is the claim rejection rate as a percentage?",
+    "role": "billing_executive",
+    "expected_sql_keywords": ["claims", "rejected"],
+    "expected_answer_contains": ["14"],
+    "expected_row_count": null
+  },
+  {
+    "id": "S-005",
+    "question": "How many maintenance tickets are resolved?",
+    "role": "admin",
+    "expected_sql_keywords": ["maintenance_tickets", "resolved"],
+    "expected_answer_contains": ["42"],
+    "expected_row_count": 1
+  },
+  {
+    "id": "S-006",
+    "question": "Which equipment category has the most open or in-progress maintenance tickets?",
+    "role": "admin",
+    "expected_sql_keywords": ["maintenance_tickets", "category"],
+    "expected_answer_contains": ["radiology", "monitoring"],
+    "expected_row_count": null
+  },
+  {
+    "id": "S-007",
+    "question": "What is the total claimed amount versus total approved amount?",
+    "role": "billing_executive",
+    "expected_sql_keywords": ["claimed_amount", "approved_amount", "claims"],
+    "expected_answer_contains": ["claimed", "approved"],
+    "expected_row_count": 1
+  },
+  {
+    "id": "S-008",
+    "question": "How many claims are pending?",
+    "role": "billing_executive",
+    "expected_sql_keywords": ["claims", "pending"],
+    "expected_answer_contains": [],
+    "expected_row_count": 1
+  }
+]

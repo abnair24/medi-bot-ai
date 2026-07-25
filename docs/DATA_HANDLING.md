@@ -43,7 +43,7 @@ The eval harness needs to compare answers to golden cases, which requires seeing
 response. Resolution:
 
 - **Eval runs only on golden-set queries** (synthetic, no real patient data).
-- Eval logs go to `evals/results/` (gitignored, local only, never committed).
+- Eval logs go to `backend/evals/results/` (gitignored, local only, never committed).
 - Production logging (the FastAPI app) follows the rules above — no query text.
 - Tracing tools (Phoenix/LangSmith) are dev-only and must not run in production with
   real user traffic.
@@ -63,13 +63,13 @@ logger.info(f"request_id={req_id} role={role} route={route} "
 
 | Data | Where | PHI risk | Rule |
 |---|---|---|---|
-| Source PDFs | `data/docs/` (git) | No — internal policy docs, not patient records | Safe to commit |
-| mediassist.db | `data/` (git) | **Yes** — contains patient_name, patient_id | This is demo/synthetic data; if it were real, it would not be in git |
+| Source PDFs | `backend/ingestion/data/docs/` (git) | No — internal policy docs, not patient records | Safe to commit |
+| mediassist.db | `backend/ingestion/data/` (git) | **Yes** — contains patient_name, patient_id | This is demo/synthetic data; if it were real, it would not be in git |
 | Qdrant vectors | Docker volume | No — document chunks only, no patient data | Safe |
 | JWT tokens | In-memory only | No — employee role, not PHI | Never persist |
 | User queries | **Not stored** | Yes | Queries are processed and discarded; never written to disk or DB |
 | LLM responses | **Not stored** | Yes | Responses are returned to the user and discarded |
-| Eval results | `evals/results/` (gitignored) | No — synthetic golden-set only | Never commit; never run on real queries |
+| Eval results | `backend/evals/results/` (gitignored) | No — synthetic golden-set only | Never commit; never run on real queries |
 
 ---
 

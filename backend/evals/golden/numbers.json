@@ -1,0 +1,26 @@
+[
+  {
+    "id": "N-001",
+    "question": "What is the Aspirin loading dose for NSTEMI?",
+    "role": "doctor",
+    "expected_values": ["300 mg"]
+  },
+  {
+    "id": "N-002",
+    "question": "What is the initial IV Heparin bolus dose for NSTEMI, including the maximum?",
+    "role": "doctor",
+    "expected_values": ["60 units/kg", "4000 units"]
+  },
+  {
+    "id": "N-003",
+    "question": "What is the billing package amount for NSTEMI, diagnosis code I21.4?",
+    "role": "billing_executive",
+    "expected_values": ["1,20,000"]
+  },
+  {
+    "id": "N-004",
+    "question": "What is the typical length of stay for NSTEMI, diagnosis code I21.4?",
+    "role": "billing_executive",
+    "expected_values": ["3-5 days"]
+  }
+]

@@ -11,7 +11,7 @@
 
 ## 1. What MediBot is
 
-An internal AI assistant for MediAssist Health Network (12 hospitals, 40+ clinics, India).
+An internal AI assistant for the Health Network (12 hospitals, 40+ clinics, India).
 Two jobs:
 
 1. **Intelligent retrieval** — staff ask natural-language questions, get cited answers from
@@ -55,11 +55,11 @@ SQL RAG is gated to `billing_executive` and `admin` only.
 | `billing` | billing_codes, claim_submission_guide | PDF + MD |
 | `equipment` | equipment_manual | PDF (table-heavy) |
 
-All source files are in `data/docs/`.
+All source files are in `backend/ingestion/data/docs/`.
 
 ### 3.2 Relational database
 
-`data/mediassist.db` — SQLite with two tables:
+`backend/ingestion/data/mediassist.db` — SQLite with two tables:
 
 - `claims` (85 rows) — columns: claim_id, patient_id, patient_name, department, claim_type,
   diagnosis_code, insurer, claimed_amount, approved_amount, status, submitted_date,
@@ -95,7 +95,7 @@ Validated via Pydantic at ingest time. See `ARCHITECTURE.md` §Pydantic boundari
   subsection → paragraph/table), then applies token limit as second pass.
 - Each chunk's embedded text must carry its parent section heading as context.
 - Each chunk must include the metadata schema above, validated via Pydantic before storage.
-- All ingestion runs as a standalone script (`scripts/ingest.py`), not at app startup.
+- All ingestion runs as a standalone script (`backend/ingestion/ingest.py`), not at app startup.
 
 ### Component 2: Hybrid RAG (dense + BM25)
 
@@ -118,13 +118,33 @@ Validated via Pydantic at ingest time. See `ARCHITECTURE.md` §Pydantic boundari
 - Gated to `billing_executive` and `admin` roles.
 - Three explicit steps: (1) LLM generates SQL, (2) clean/extract the SQL statement,
   (3) execute against SQLite, (4) LLM produces natural-language answer from the result.
-- Implemented as a plain Python function, not a LangChain agent.
+- When HITL is enabled, the graph pauses after SQL generation (`interrupt()`) and waits
+  for user approval before executing. See Component 8.
+- SQL service remains a plain Python function; orchestration is handled by the graph.
 
 ### Component 5: Semantic router
 
 - LLM-based classification: ANALYTICAL → SQL RAG, KNOWLEDGE → hybrid RAG.
 - Uses Pydantic structured output for the route decision.
 - Logged for every query; evaluated via confusion matrix (see EVAL_PLAN.md).
+
+### Component 8: Graph orchestration (LangGraph)
+
+- All pipeline components (router, retrieval, rerank, generation, SQL RAG) are assembled
+  into a LangGraph `StateGraph`. Each component is a **node** that calls the
+  corresponding service.
+- Graph state (`MediBotState`) carries question, role, route, chunks, answer, and
+  conversation history across nodes.
+- **Conditional edges** replace if/else routing: the router node's output determines
+  whether the graph flows to hybrid RAG or SQL RAG.
+- **Multi-turn memory** is native: `SqliteSaver` checkpointer persists conversation
+  state across turns. A query rewrite node resolves ambiguous follow-ups using prior
+  turns before the question enters the pipeline.
+- **Human-in-the-loop** is native: `interrupt()` on the SQL proposal node pauses the
+  graph and returns the proposed SQL to the user. The graph resumes only after approval.
+- Three-layer rule: **graph nodes → services → adapters**. Nodes never import vendor
+  SDKs directly. Services remain testable in isolation.
+- Graph is compiled once at app startup and invoked per request.
 
 ### Component 6: Backend (FastAPI)
 
@@ -179,7 +199,7 @@ Full details in `EVAL_PLAN.md`. Summary of eval tracks:
 | Chunk quality | parent heading present, tables intact | plain pytest | Yes — pass/fail |
 | LLM-as-judge calibration | judge agreement with human labels | plain Python | No — reported |
 
-Golden dataset: `evals/golden/` — see `GOLDEN_SET.md` for schema and starter cases.
+Golden dataset: `backend/evals/golden/` — see `GOLDEN_SET.md` for schema and starter cases.
 
 ---
 
@@ -190,14 +210,14 @@ Build in this order. Each phase is independently runnable and testable.
 | Phase | What | Depends on | Deliverable |
 |---|---|---|---|
 | **0** | Project scaffold, deps, env | nothing | repo structure, `.env.example`, docker-compose |
-| **1** | Ingestion | Phase 0 | `scripts/ingest.py` runs, chunks in Qdrant with correct metadata |
+| **1** | Ingestion | Phase 0 | `backend/ingestion/ingest.py` runs, chunks in Qdrant with correct metadata |
 | **2** | Retrieval + RBAC | Phase 1 | hybrid search returns results, RBAC filter blocks restricted chunks |
 | **3** | Reranker | Phase 2 | top-10 → top-3 with logged scores |
 | **4** | LLM generation | Phase 3 | answers with citations from reranked chunks |
-| **5** | SQL RAG + router | Phase 4 | analytical queries route to SQL, knowledge to hybrid |
-| **6** | FastAPI backend | Phases 4+5 | all endpoints working with JWT auth |
-| **7** | Streamlit frontend | Phase 6 | Tab 1 (demo) functional |
-| **8** | Eval harness | Phases 1-6 | golden set, all eval tracks, CI green |
+| **5** | SQL RAG + router + graph | Phase 4 | LangGraph StateGraph assembles full pipeline: router → hybrid/SQL, multi-turn memory (SqliteSaver), HITL on SQL, query rewrite |
+| **6** | FastAPI backend | Phase 5 | all endpoints working with JWT auth, graph invoked per request |
+| **7** | Streamlit frontend | Phase 6 | Tab 1 (demo) with multi-turn chat + SQL approval UI |
+| **8** | Eval harness | Phases 1-6 | golden set, all eval tracks (incl. multi-turn + HITL), CI green |
 | **9** | Eval dashboard | Phase 8 | Tab 2 (dashboard) showing real scores |
 | **10** | Deploy | Phase 9 | docker-compose up, or Streamlit Cloud + hosted Qdrant |
 
@@ -214,10 +234,11 @@ Build in this order. Each phase is independently runnable and testable.
 | Vector DB | Qdrant (local) | hybrid search + metadata filter in one query |
 | Reranker | cross-encoder (e.g. ms-marco-MiniLM) | lightweight, effective |
 | LLM | Groq (llama-3 or similar) | fast, cheap inference |
+| **Orchestration** | **LangGraph (langgraph + langchain-core)** | **StateGraph for pipeline flow, native HITL (interrupt), native memory (SqliteSaver checkpointer)** |
 | Backend | FastAPI | native Pydantic, async |
 | Frontend | Streamlit | fast to build, native charts for eval dashboard |
 | Auth | JWT (PyJWT) | simple, stateless |
-| SQL DB | SQLite | provided with assignment |
+| SQL DB | SQLite | provided with assignment + LangGraph checkpointer storage |
 | Eval framework | DeepEval (judge metrics) + pytest + numpy | pytest-native CI gating |
 | Tracing | Arize Phoenix (optional) | open-source, complements DeepEval |
 | Validation | Pydantic | every boundary — see ARCHITECTURE.md |
@@ -229,6 +250,7 @@ Build in this order. Each phase is independently runnable and testable.
 
 | File | Purpose | When to read |
 |---|---|---|
+| `CLAUDE.md` (root) | Claude Code entry point — routes to correct docs per phase, common commands | Every session start (auto-read) |
 | `INSTRUCTIONS.md` | This file — master spec | First |
 | `ARCHITECTURE.md` | Component diagram, RAG pipeline, adapters, DI, Pydantic boundaries | Before coding |
 | `EVAL_PLAN.md` | All eval tracks with metrics, tools, thresholds | Before Phase 8 |
@@ -240,6 +262,7 @@ Build in this order. Each phase is independently runnable and testable.
 | `DATA_HANDLING.md` | PHI rules, logging sanitization, storage rules | Before coding any logging or data flow |
 | `CODING_STANDARDS.md` | Python engineering standards, config, DI, error handling, naming | Before coding — read once, follow always |
 | `DEPLOY.md` | Docker, compose, cloud deploy instructions | Phase 10 |
+| `EXTENSIONS.md` | Future enhancements beyond LangGraph core (additional graph features, advanced evals) | After Phase 10 |
 
 ---
 
@@ -278,3 +301,7 @@ wins.
    threshold = build fails.
 7. **Adapters + dependency injection.** Each external dep (Qdrant, LLM, embedder) is behind
    an interface. Enables isolated testing and model swapping.
+8. **LangGraph for orchestration, not for retrieval/generation.** LangGraph manages the
+   pipeline flow (routing, state, HITL, memory). The actual retrieval, reranking, generation,
+   and SQL logic live in services behind adapters. Three-layer rule: graph nodes → services
+   → adapters.

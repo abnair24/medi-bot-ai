@@ -16,7 +16,19 @@ build/
 *.whl
 
 # ── Eval outputs (may contain synthetic but sensitive data) ──
-evals/results/
+backend/evals/results/
+
+# ── LangGraph checkpointer (runtime state) ──────────
+backend/ingestion/data/checkpoints.db
+
+# ── DeepEval (telemetry + local cache, machine-generated) ──
+.deepeval/
+.deepeval_telemetry.txt
+.deepeval-cache.json
+temp_test_run_data.json
+
+# ── Agent instructions (local, not checked in) ──────
+.agents/
 
 # ── Qdrant data (Docker volume) ─────────────────────
 qdrant_data/
@@ -59,3 +71,7 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.claude/settings.json
+screenshots/
+discussion/
+docs/

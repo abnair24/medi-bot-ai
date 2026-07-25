@@ -1,0 +1,14 @@
+[
+  {"id": "F-001", "question": "What is the billing package for diagnosis code I21.4?", "human_label": ""},
+  {"id": "F-002", "question": "What does fault code E-12 mean on the patient monitor and what action is required?", "human_label": ""},
+  {"id": "F-003", "question": "Which cannula size, such as 24G, is used for which indication?", "human_label": ""},
+  {"id": "F-004", "question": "What is rejection code EXCL-03 and why is a claim rejected under it?", "human_label": ""},
+  {"id": "F-005", "question": "What is the recommended dose of Piperacillin-Tazobactam?", "human_label": ""},
+  {"id": "F-006", "question": "What is the treatment protocol for an NSTEMI heart attack?", "human_label": ""},
+  {"id": "F-007", "question": "What are the initial ventilator settings, including tidal volume?", "human_label": ""},
+  {"id": "F-008", "question": "How should the Metformin dose be adjusted for renal impairment?", "human_label": ""},
+  {"id": "F-009", "question": "What are the five moments of hand hygiene?", "human_label": ""},
+  {"id": "F-010", "question": "What are the common operator errors when running the autoclave?", "human_label": ""},
+  {"id": "F-011", "question": "What dispensing safety measures cover look-alike sound-alike drugs?", "human_label": ""},
+  {"id": "F-012", "question": "What is the policy on accepting gifts and gratuity from vendors?", "human_label": ""}
+]

@@ -1,0 +1,32 @@
+# Dev + eval dependencies. Tools ONLY — deliberately does NOT `-r requirements.txt`.
+#
+# WHY: there is a HARD, unavoidable version conflict between two declared pins —
+#   - deepeval 4.x        pins click<8.4.0   (overly strict; it works fine with 8.4.2
+#                                             as a library — we use its metrics API,
+#                                             not its CLI)
+#   - huggingface-hub     pins click>=8.4.2  (a REAL hard requirement, pulled by the
+#                                             base app via sentence-transformers/docling)
+# No single click version satisfies both, so pip's strict resolver REFUSES any solve
+# that contains both at once (ResolutionImpossible). deepeval does NOT pull
+# huggingface-hub, so the trick is to install them in SEPARATE, ORDERED pip commands:
+#
+#   pip install -r requirements-dev.txt   # deepeval + tools  -> click<8.4.0
+#   pip install -r requirements.txt       # base app (hf-hub) -> bumps click to 8.4.2
+#
+# The second command emits a warning ("deepeval requires click<8.4.0 ... incompatible")
+# but SUCCEEDS, leaving click at 8.4.2 (hf-hub happy) and deepeval fully functional.
+# The Dockerfile.backend RUN step encodes this order. NEVER combine the two -r files
+# in one pip invocation.
+
+# --- Test tooling ---
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+ruff>=0.5.0
+mypy>=1.10.0
+
+# --- Eval (judge-based) ---
+# deepeval 4.x drops the removed `langchain.schema` import that broke deepeval 1.3.3 on
+# langchain 1.x (BUG-14). Its click<8.4.0 cap is intentionally overridden at install
+# time by the ordered install above (BUG-15) — do NOT add a click pin here, that would
+# recreate the hard conflict inside this file's own solve.
+deepeval>=4.1.1

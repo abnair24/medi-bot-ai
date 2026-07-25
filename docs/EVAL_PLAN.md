@@ -35,7 +35,7 @@ framework where an assertion suffices.
 **Threshold:** hybrid+rerank P@3 ≥ 0.70. Dense-only P@3 is the baseline (no gate, just
 reported for comparison).
 
-**Test file:** `evals/test_retrieval.py`
+**Test file:** `backend/evals/test_retrieval.py`
 
 **Key test queries** (where keyword search matters):
 - `I21.4` (ICD code — pure keyword)
@@ -53,7 +53,7 @@ reported for comparison).
 **Metric:** leak rate = (leaked chunks / total adversarial queries). Must be zero.
 
 **How:**
-- Run every case in `evals/golden/adversarial.json` (see RBAC_REDTEAM.md for the full
+- Run every case in `backend/evals/golden/adversarial.json` (see RBAC_REDTEAM.md for the full
   matrix).
 - For each: execute the retrieval with the attacker role's filter.
 - Assert: no chunk from a restricted collection appears in the retrieved context.
@@ -64,7 +64,7 @@ reported for comparison).
 
 **Threshold:** leak count = 0. Any leak → build fails (fail-closed).
 
-**Test file:** `evals/test_rbac.py`
+**Test file:** `backend/evals/test_rbac.py`
 
 **Critical case:** NSTEMI / I21.4 appears in clinical (treatment protocol), billing
 (package rate ₹1,20,000), and the claim guide (worked example). A billing_executive
@@ -92,7 +92,7 @@ sourced from the retrieved context?
 
 **Threshold:** faithfulness ≥ 0.80. Number-match accuracy ≥ 0.90.
 
-**Test file:** `evals/test_faithfulness.py`
+**Test file:** `backend/evals/test_faithfulness.py`
 
 **Key cases:**
 - Metformin first-line = 500 mg BD (not 1000, not TDS)
@@ -121,7 +121,7 @@ faithful to the result?
 
 **Threshold:** execution success ≥ 0.90. Result match ≥ 0.85.
 
-**Test file:** `evals/test_sql.py`
+**Test file:** `backend/evals/test_sql.py`
 
 **Golden answers (verified from the actual DB):**
 
@@ -156,7 +156,7 @@ description may not match perfectly. Tests cross-source handling.
 
 **Threshold:** routing accuracy ≥ 0.90.
 
-**Test file:** `evals/test_routing.py`
+**Test file:** `backend/evals/test_routing.py`
 
 **Edge cases to include:**
 - "how many claims were escalated" → ANALYTICAL (clear)
@@ -183,7 +183,7 @@ description may not match perfectly. Tests cross-source handling.
 
 **Threshold:** heading-present ≥ 0.95. Table-intact ≥ 0.90.
 
-**Test file:** `evals/test_chunk_quality.py`
+**Test file:** `backend/evals/test_chunk_quality.py`
 
 ---
 
@@ -204,6 +204,25 @@ the judge is unreliable and you should adjust the rubric or model.
 
 ---
 
+## 8–10. LangGraph eval tracks
+
+With LangGraph providing native multi-turn memory and HITL, these tracks are part of
+the core eval harness (Phase 8), not extensions.
+
+| Track | What it measures | Tool | CI-gated? |
+|---|---|---|---|
+| 8. Multi-turn retrieval | P@3 improvement from query rewrite vs raw follow-up | numpy | Yes — threshold |
+| 9. Rewrite faithfulness | intent preservation after LLM query rewrite | DeepEval | Yes — threshold |
+| 10. HITL SQL safety | interrupt/resume lifecycle: approve/reject/resume | pytest | Yes — fail-closed |
+
+Golden datasets: `backend/evals/golden/multiturn.json`, `backend/evals/golden/sql_hitl.json`.
+Test files: `backend/evals/test_multiturn.py`, `backend/evals/test_sql_hitl.py`.
+
+Full golden case schemas and starter data are in `EXTENSIONS.md §3` (retained as
+reference even though the features are now core).
+
+---
+
 ## CI gate configuration (.github/workflows/eval.yml)
 
 ```yaml
@@ -212,13 +231,17 @@ on: [push, pull_request]
 jobs:
   eval:
     steps:
-      - run: pytest evals/test_rbac.py -x          # fail-fast, zero tolerance
-      - run: pytest evals/test_chunk_quality.py
-      - run: pytest evals/test_sql.py
-      - run: pytest evals/test_routing.py
-      - run: pytest evals/test_retrieval.py
-      - run: pytest evals/test_faithfulness.py      # needs LLM API key
+      # Core pipeline evals
+      - run: pytest backend/evals/test_rbac.py -x          # fail-fast, zero tolerance
+      - run: pytest backend/evals/test_chunk_quality.py
+      - run: pytest backend/evals/test_sql.py
+      - run: pytest backend/evals/test_routing.py
+      - run: pytest backend/evals/test_retrieval.py
+      - run: pytest backend/evals/test_multiturn.py
+      - run: pytest backend/evals/test_sql_hitl.py
+      - run: pytest backend/evals/test_faithfulness.py      # needs LLM API key (last)
 ```
 
 RBAC runs first and fails fast (`-x`). If any RBAC leak exists, nothing else runs.
 Faithfulness runs last because it costs LLM tokens.
+

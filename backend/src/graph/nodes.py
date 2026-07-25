@@ -1,0 +1,186 @@
+from langgraph.types import interrupt
+
+from src.config.settings import settings
+from src.graph.state import MediBotState
+from src.services.denial_service import verbalize_denial
+from src.services.generation_service import GenerationService
+from src.services.rerank_service import RerankService
+from src.services.retrieval_service import RetrievalService
+from src.services.rewrite_service import RewriteService
+from src.services.router_service import RouterService
+from src.services.sql_rag_service import SQLRAGService
+from src.utils.exceptions import RBACError
+
+
+# Two-axis router: query specificity → how many reranked chunks feed generation.
+# Values live in settings (no hardcoding) — this maps the specificity label to the
+# corresponding setting. aggregate uses the default reranker_final_k.
+def _final_k_for_specificity(specificity: str | None) -> int:
+    """Resolve the reranker cutoff from the router's specificity classification."""
+    if specificity == "point_lookup":
+        return settings.reranker_final_k_point_lookup
+    if specificity == "exploratory":
+        return settings.reranker_final_k_exploratory
+    return settings.reranker_final_k  # aggregate / unknown → default
+
+
+def make_rewrite_node(svc: RewriteService):
+    """Return a node that rewrites the question for multi-turn clarity."""
+
+    async def rewrite_node(state: MediBotState) -> dict:
+        rewritten = await svc.rewrite(
+            question=state["question"],
+            history=state.get("history", []),
+            request_id=state["request_id"],
+            role=state["role"],
+        )
+        # Overwrite question in place — all downstream nodes read the same key.
+        return {"question": rewritten}
+
+    return rewrite_node
+
+
+def make_router_node(svc: RouterService):
+    """Return a node that classifies the question on two axes: route × specificity.
+
+    route        → hybrid_rag vs sql_rag (which path to take).
+    specificity  → point_lookup / aggregate / exploratory (how deep to rerank).
+    Both are written to state; the rerank node reads specificity to size its output.
+    """
+
+    async def router_node(state: MediBotState) -> dict:
+        decision = await svc.classify_detailed(
+            question=state["question"],
+            request_id=state["request_id"],
+            role=state["role"],
+        )
+        return {"route": decision.route, "specificity": decision.specificity}
+
+    return router_node
+
+
+def make_retrieve_node(svc: RetrievalService):
+    """Return a node that runs hybrid retrieval with RBAC pre-filter."""
+
+    async def retrieve_node(state: MediBotState) -> dict:
+        chunks = await svc.search(
+            query=state["question"],
+            role=state["role"],
+            request_id=state["request_id"],
+        )
+        return {"chunks": chunks}
+
+    return retrieve_node
+
+
+def make_rerank_node(svc: RerankService):
+    """Return a node that reranks retrieved chunks with the cross-encoder."""
+
+    async def rerank_node(state: MediBotState) -> dict:
+        # Two-axis router: size the reranked context by query specificity.
+        final_k = _final_k_for_specificity(state.get("specificity"))
+        reranked = await svc.rerank(
+            query=state["question"],
+            chunks=state["chunks"],
+            request_id=state["request_id"],
+            role=state["role"],
+            final_k=final_k,
+        )
+        # Replace chunks with top-k reranked subset.
+        return {"chunks": reranked}
+
+    return rerank_node
+
+
+def make_generate_node(svc: GenerationService):
+    """Return a node that generates a grounded answer from reranked chunks."""
+
+    async def generate_node(state: MediBotState) -> dict:
+        answer, sources = await svc.generate(
+            question=state["question"],
+            chunks=state["chunks"],
+            role=state["role"],
+            request_id=state["request_id"],
+        )
+        return {"answer": answer, "sources": sources}
+
+    return generate_node
+
+
+def make_sql_propose_node(svc: SQLRAGService):
+    """Return a node that generates SQL and optionally pauses for human approval.
+
+    HITL flow (sql_hitl_enabled=True):
+      1. Generate SQL, store in state["proposed_sql"].
+      2. Call interrupt() — graph suspends, checkpoints state, returns proposal to API.
+      3. On resume: interrupt() returns the user's decision dict.
+      4. If approved: return proposed_sql so sql_execute_node can run it.
+      5. If rejected: set answer to rejection message, proposed_sql=None.
+         route_after_propose edge sends this directly to END.
+
+    Non-HITL flow (sql_hitl_enabled=False):
+      Steps 2-5 are skipped. proposed_sql is set and sql_execute_node runs immediately.
+    """
+
+    async def sql_propose_node(state: MediBotState) -> dict:
+        role = state["role"]
+        # Use original_question for SQL generation, not the rewrite_node output.
+        # Rewrite augments the question with prior-turn context ("given 0 escalated")
+        # which causes narration to produce comparisons the user didn't ask for.
+        sql_question = state.get("original_question") or state["question"]
+        try:
+            clean_sql = await svc.generate_sql(
+                question=sql_question,
+                role=role,
+                request_id=state["request_id"],
+            )
+        except RBACError:
+            # Role is not authorized for SQL RAG. Return a conversational denial
+            # rather than propagating an HTTP 403 — the user is authenticated;
+            # they just lack the feature permission. route_after_propose sees the
+            # answer field and routes directly to END without executing SQL.
+            # Use the deterministic denial verbalizer (single source of truth). Do NOT
+            # enumerate which roles CAN run SQL — naming privileged roles is an
+            # unnecessary disclosure (tells the user who to target) and violates the
+            # guardrail that a refusal states only the user's own role + access.
+            denial = verbalize_denial(role)
+            sql_note = " Analytical database queries are not available at your access level."
+            return {
+                "answer": denial.message + sql_note,
+                "proposed_sql": None,
+                "sources": [],
+            }
+
+        if settings.sql_hitl_enabled:
+            # Pause graph and return SQL proposal to the human.
+            # On resume, interrupt() returns the decision dict from ConfirmRequest.
+            decision = interrupt({"proposed_sql": clean_sql})
+
+            if not decision.get("approved", False):
+                return {
+                    "answer": "SQL execution was rejected. No data was queried.",
+                    "proposed_sql": None,
+                    "sources": [],
+                }
+
+        return {"proposed_sql": clean_sql}
+
+    return sql_propose_node
+
+
+def make_sql_execute_node(svc: SQLRAGService):
+    """Return a node that executes approved SQL and narrates the result."""
+
+    async def sql_execute_node(state: MediBotState) -> dict:
+        sql = state["proposed_sql"]
+        sql_question = state.get("original_question") or state["question"]
+        answer, _result = await svc.execute_and_narrate(
+            sql=sql,
+            question=sql_question,
+            role=state["role"],
+            request_id=state["request_id"],
+        )
+        # sources is empty for SQL RAG — answers cite row data, not document chunks.
+        return {"answer": answer, "sources": []}
+
+    return sql_execute_node

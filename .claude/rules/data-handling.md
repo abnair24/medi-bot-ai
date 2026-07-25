@@ -18,13 +18,13 @@
 - Use structured logging with explicit field names — never f-string a query into a log.
 - In sql_rag_service: strip patient_name and patient_id from results before passing to
   the narration LLM.
-- Eval logs go to evals/results/ (gitignored) and use only synthetic golden-set queries.
+- Eval logs go to backend/evals/results/ (gitignored) and use only synthetic golden-set queries.
 - Never write user queries to disk, database, or any persistent storage.
 - Never include real patient data in test fixtures — use synthetic data only.
 
 ## .gitignore requirements
 
-- evals/results/ must be gitignored.
+- backend/evals/results/ must be gitignored.
 - .env must be gitignored.
 - Any file containing API keys must be gitignored.
 - qdrant_data/ (Docker volume) must be gitignored.
