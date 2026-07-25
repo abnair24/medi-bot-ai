@@ -107,3 +107,48 @@ class RetrievalService:
         )
 
         return chunks
+
+    async def restricted_matches(
+        self,
+        query: str,
+        role: str,
+        request_id: str,
+    ) -> list[str]:
+        """Probe which collections OUTSIDE the role's access strongly match the query.
+
+        Used to distinguish an ACCESS-scoped miss from a genuine no-content miss when the
+        RBAC-filtered retrieval returns nothing relevant. Runs an unrestricted (admin-scope)
+        search and returns the collections that appear in the top results but are NOT in the
+        caller's access list.
+
+        Security: the restricted CONTENT is never returned to the user or the LLM — only the
+        collection *names* leave this method, and only to decide whether to show an RBAC
+        denial. This is not a post-filter of the user's results (those stay pre-filtered).
+        """
+        accessible = set(ROLE_COLLECTIONS.get(role, []))
+
+        dense_vector, sparse_vector = await asyncio.gather(
+            asyncio.to_thread(self._embedder.embed_query, query),
+            asyncio.to_thread(self._sparse.embed, query),
+        )
+        # "admin" sees every collection — an unrestricted probe. Only the top few results
+        # matter: if the query's best home is a collection the caller can't see, that's an
+        # access miss. Keep top-3 to avoid weak/incidental matches triggering a false denial.
+        probe = self._qdrant.hybrid_search(
+            dense_vector=dense_vector,
+            sparse_vector=sparse_vector,
+            role="admin",
+            limit=settings.retrieval_top_k,
+        )
+        restricted: list[str] = []
+        for chunk in probe[:3]:
+            if chunk.collection not in accessible and chunk.collection not in restricted:
+                restricted.append(chunk.collection)
+
+        log_request_event(
+            request_id=request_id,
+            role=role,
+            event="rbac_access_probe",
+            restricted_matches=restricted,
+        )
+        return restricted

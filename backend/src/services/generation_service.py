@@ -104,22 +104,31 @@ class GenerationService:
         chunks: list[ChunkResult],
         role: str,
         request_id: str,
+        restricted_matches: list[str] | None = None,
     ) -> tuple[str, list[Source]]:
         """Generate a grounded answer from reranked chunks.
 
-        If chunks is empty (RBAC filter returned nothing), falls back to the
-        RBAC refusal path — an LLM-generated polite refusal at temperature=0.5.
+        On a MISS (no chunks, or nothing relevant), the response depends on WHY:
+        - the query's answer lives in a collection the role can't access
+          (restricted_matches non-empty) → RBAC denial ("not available at your access
+          level"), so a nurse asking about billing gets a clear access message.
+        - the topic simply isn't in the corpus → "no relevant protocol" message.
 
         Args:
             question: user's natural-language question. Passed to LLM but never logged.
             chunks: top-k ChunkResult objects from RerankService (may be empty).
             role: authenticated user role, for refusal phrasing and log correlation.
             request_id: trace ID for correlating log records across pipeline stages.
+            restricted_matches: collections OUTSIDE the role that the query matched
+                (from RetrievalService.restricted_matches). Names only — never content.
 
         Returns:
-            Tuple of (answer_text, sources). Sources is empty on refusal path.
+            Tuple of (answer_text, sources). Sources is empty on any miss path.
         """
+        restricted = restricted_matches or []
+
         if not chunks:
+            # Empty results = a hard access miss (RBAC filtered everything). Always a denial.
             denial = verbalize_denial(role)
             log_request_event(
                 request_id=request_id,
@@ -145,6 +154,20 @@ class GenerationService:
         # keep the real content, dropping the stray sentinel so it never leaks to the user.
         cleaned = answer.replace(_NO_RELEVANT_SENTINEL, "").strip()
         if not cleaned:
+            # Nothing relevant in the role's accessible collections. If the query's answer
+            # lives in a collection the role CAN'T see, this is an access miss → RBAC denial
+            # (e.g. nurse asks about billing). Otherwise it's genuinely absent → no-content.
+            if restricted:
+                denial = verbalize_denial(role)
+                log_request_event(
+                    request_id=request_id,
+                    role=role,
+                    event="generation_rbac_refusal",
+                    chunk_count=len(chunks),
+                    reason="access_scoped_miss",
+                    accessible_collections=denial.accessible_collections,
+                )
+                return denial.message, []
             log_request_event(
                 request_id=request_id,
                 role=role,

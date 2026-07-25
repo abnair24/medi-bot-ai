@@ -68,7 +68,15 @@ def make_retrieve_node(svc: RetrievalService):
             role=state["role"],
             request_id=state["request_id"],
         )
-        return {"chunks": chunks}
+        # Access-miss probe: which collections OUTSIDE this role match the query? Lets the
+        # generate node show an RBAC denial (not a generic "no relevant protocol") when the
+        # answer lives in a collection the user can't see. Never surfaces restricted content.
+        restricted = await svc.restricted_matches(
+            query=state["question"],
+            role=state["role"],
+            request_id=state["request_id"],
+        )
+        return {"chunks": chunks, "restricted_matches": restricted}
 
     return retrieve_node
 
@@ -101,6 +109,7 @@ def make_generate_node(svc: GenerationService):
             chunks=state["chunks"],
             role=state["role"],
             request_id=state["request_id"],
+            restricted_matches=state.get("restricted_matches", []),
         )
         return {"answer": answer, "sources": sources}
 

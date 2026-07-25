@@ -30,6 +30,8 @@ class MediBotState(TypedDict, total=False):
 
     # --- Set by retrieve_node and rerank_node (hybrid_rag path) ---
     chunks: list[ChunkResult]
+    restricted_matches: list[str]  # collections outside the role that the query matched;
+                                   # drives RBAC denial vs "no relevant protocol" on a miss
 
     # --- Set by generate_node (hybrid_rag path) ---
     sources: list[Source]
