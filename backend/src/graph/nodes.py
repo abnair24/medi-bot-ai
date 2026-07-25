@@ -75,6 +75,7 @@ def make_retrieve_node(svc: RetrievalService):
             query=state["question"],
             role=state["role"],
             request_id=state["request_id"],
+            user_chunks=chunks,
         )
         return {"chunks": chunks, "restricted_matches": restricted}
 

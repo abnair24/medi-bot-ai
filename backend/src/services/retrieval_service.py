@@ -113,42 +113,52 @@ class RetrievalService:
         query: str,
         role: str,
         request_id: str,
+        user_chunks: list[ChunkResult],
     ) -> list[str]:
-        """Probe which collections OUTSIDE the role's access strongly match the query.
+        """Detect an ACCESS-scoped miss: does the query's BEST home lie in a collection the
+        role can't see, and beat everything the role CAN see?
 
-        Used to distinguish an ACCESS-scoped miss from a genuine no-content miss when the
-        RBAC-filtered retrieval returns nothing relevant. Runs an unrestricted (admin-scope)
-        search and returns the collections that appear in the top results but are NOT in the
-        caller's access list.
+        Distinguishes "topic is behind RBAC" (→ show a denial) from "topic isn't in the
+        corpus at all" (→ show 'no relevant protocol'). Runs one unrestricted (admin-scope)
+        probe and compares its top hit against the user's own best RBAC-filtered score. Only
+        fires when a restricted collection clearly wins — so a weak incidental match on an
+        absent topic does NOT trigger a false denial.
 
-        Security: the restricted CONTENT is never returned to the user or the LLM — only the
-        collection *names* leave this method, and only to decide whether to show an RBAC
-        denial. This is not a post-filter of the user's results (those stay pre-filtered).
+        Security: restricted CONTENT never leaves this method — only collection names, and
+        only to choose the denial message. The user's actual results stay pre-filtered.
         """
         accessible = set(ROLE_COLLECTIONS.get(role, []))
+        user_top = max((c.score for c in user_chunks), default=0.0)
 
         dense_vector, sparse_vector = await asyncio.gather(
             asyncio.to_thread(self._embedder.embed_query, query),
             asyncio.to_thread(self._sparse.embed, query),
         )
-        # "admin" sees every collection — an unrestricted probe. Only the top few results
-        # matter: if the query's best home is a collection the caller can't see, that's an
-        # access miss. Keep top-3 to avoid weak/incidental matches triggering a false denial.
         probe = self._qdrant.hybrid_search(
             dense_vector=dense_vector,
             sparse_vector=sparse_vector,
-            role="admin",
+            role="admin",  # admin sees every collection — an unrestricted probe
             limit=settings.retrieval_top_k,
         )
+
+        # An access miss requires the SINGLE best match for the query to be a collection the
+        # caller can't see, AND to clearly outscore the caller's own best hit. The margin
+        # guards against ties where the topic is merely absent (accessible + restricted both weak).
         restricted: list[str] = []
-        for chunk in probe[:3]:
-            if chunk.collection not in accessible and chunk.collection not in restricted:
-                restricted.append(chunk.collection)
+        if probe:
+            top = probe[0]
+            if (
+                top.collection not in accessible
+                and top.score > user_top + settings.rbac_probe_margin
+            ):
+                restricted.append(top.collection)
 
         log_request_event(
             request_id=request_id,
             role=role,
             event="rbac_access_probe",
             restricted_matches=restricted,
+            probe_top_score=round(probe[0].score, 4) if probe else None,
+            user_top_score=round(user_top, 4),
         )
         return restricted

@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # --- Retrieval ---
     retrieval_top_k: int = 10
     hyde_enabled: bool = False  # HyDE: embed hypothetical answer instead of raw query (dense path only)
+    # RBAC access-miss probe: a restricted collection must outscore the user's best hit by
+    # this margin to count as "the answer is behind RBAC" (→ denial) vs "topic is absent".
+    rbac_probe_margin: float = 0.05
 
     # --- SQL RAG ---
     # Paths are relative to CWD (repo root locally, /app in Docker). Data now lives
