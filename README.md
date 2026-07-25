@@ -101,6 +101,7 @@ flowchart LR
     classDef store fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c;
 ```
 **Repository Layout**
+
 <img width="311" height="455" alt="Screenshot 2026-07-25 at 9 18 15 PM" src="https://github.com/user-attachments/assets/4b9b64cc-73b5-402e-8543-943cfe61fd25" />
 
 - **Ingestion (offline):** Docling parses PDFs/MD → HierarchicalChunker → Pydantic-
