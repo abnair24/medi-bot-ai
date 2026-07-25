@@ -1,83 +1,93 @@
-# MediBot — RBAC-Aware Clinical RAG Assistant
+# Medi-Bot-AI — RBAC-Aware Clinical RAG Assistant
 
-An internal AI assistant for **the Health Network** (a fictional 12-hospital group
-in India). Staff ask natural-language questions and get **cited answers from the right
-documents** — scoped to what their role is allowed to see, enforced at the vector-store
-level. It combines **hybrid document RAG** and **text-to-SQL RAG** behind a LangGraph
-pipeline, with a measurable eval harness and PHI-safe observability.
-
-> **What this is:** a portfolio project built eval-first — every pipeline stage is
-> instrumented and graded against ground truth, not just wired together.
+Medibot-AI is an internal AI assistant.Staff ask natural-language questions and get **cited answers from the right
+documents** — scoped to what their role is allowed to see.
 
 ---
 
 ## Highlights
 
-- **Hybrid RAG** — dense (BGE) + sparse (BM25) retrieval fused in Qdrant, then a
-  cross-encoder reranker. Answers are grounded in retrieved chunks with source citations.
-- **RBAC as a pre-filter** — the role's collection allow-list is applied *inside* the
-  Qdrant query. Restricted chunks are never returned to the application or the LLM — not
-  post-filtered after the fact.
-- **SQL RAG** — natural-language → SQL over the claims/maintenance database, gated to
-  `billing_executive` and `admin`, with PHI columns stripped before narration.
-- **LangGraph orchestration** — a router splits analytical vs knowledge queries;
-  multi-turn memory (SqliteSaver checkpointer) and optional human-in-the-loop SQL
-  approval (`interrupt()`) are native.
-- **Deterministic medical safety** — disclaimers appended in code (not left to the LLM),
-  and a guard that blocks unit conversions and prescriptive/advice-giving language.
-- **Eval harness** — 9 tracks (RBAC red-team, retrieval A/B, SQL correctness, routing,
-  numeric faithfulness, chunk quality, safety, judge calibration) with an admin dashboard.
-- **PHI-safe observability** — structured JSON logs correlated by `request_id`
-  (`X-Request-ID` header), per-stage latency, and per-request LLM token/cost accounting
-  (`X-LLM-Tokens` header). Never logs query or answer text.
-
-### Portfolio upgrades (beyond the base assignment)
-
-- **HyDE** — optionally embeds a hypothetical answer for the dense path to bridge the
-  query↔document vocabulary gap (`HYDE_ENABLED`).
-- **Two-axis router** — classifies both *route* (SQL vs hybrid) and *specificity*
-  (point-lookup / aggregate / exploratory), which tunes reranking depth.
-- **Deterministic denial verbalizer** — RBAC refusals are templated (zero LLM cost,
-  auditable, no hallucination), replacing an LLM-generated refusal.
+| Capability | What it does |
+|---|---|
+| **Hybrid RAG** | Dense (BGE) + sparse (BM25) retrieval fused in Qdrant, then a cross-encoder reranker. Answers are grounded in retrieved chunks with source citations. |
+| **RBAC as a pre-filter** | The role's collection allow-list is applied *inside* the Qdrant query — restricted chunks are never returned to the app or the LLM, not post-filtered after the fact. |
+| **SQL RAG** | Natural-language → SQL over the claims/maintenance database, gated to `billing_executive` and `admin`, with PHI columns stripped before narration. |
+| **LangGraph orchestration** | A router splits analytical vs knowledge queries; multi-turn memory (SqliteSaver) and optional human-in-the-loop SQL approval (`interrupt()`) are native. |
+| **Deterministic medical safety** | Disclaimers appended in code (not left to the LLM), plus a guard that blocks unit conversions and prescriptive/advice-giving language. |
+| **Eval harness** | 9 tracks (RBAC red-team, retrieval A/B, SQL correctness, routing, numeric faithfulness, chunk quality, safety, judge calibration) with an admin dashboard. |
+| **PHI-safe observability** | Structured JSON logs correlated by `request_id` (`X-Request-ID` header), per-stage latency, and per-request LLM token/cost accounting (`X-LLM-Tokens`). Never logs query or answer text. |
 
 ---
 
 ## Architecture
 
-**Query pipeline (per request):**
+**System overview:**
 
 ```mermaid
-flowchart TD
-    U([Staff user]):::client -->|login → JWT w/ role| UI[Streamlit UI<br/>chat · admin eval dashboard]:::client
-    UI -->|POST /chat · Bearer JWT| MW[Request middleware<br/>request_id · latency · token meter]:::infra
+flowchart TB
+    U([Staff user · JWT role]):::client --> UI[Streamlit UI<br/>chat · admin eval dashboard]:::client
 
-    subgraph LG[LangGraph · per-session memory + HITL]
+    subgraph RT[Request pipeline · FastAPI + LangGraph]
         direction TB
-        RW[rewrite<br/>resolve follow-ups]:::node --> RTR{router<br/>route × specificity}:::node
-        RTR -->|knowledge| RET[retrieve]:::node --> RRK[rerank]:::node --> GEN[generate<br/>safety guard · disclaimers]:::node
-        RTR -->|analytical| SQP[SQL propose]:::node -. HITL approve .-> SQX[SQL execute → narrate<br/>PHI stripped]:::node
+        MW[Request middleware<br/>request_id · latency · token meter]:::infra --> RTR{Router<br/>route × specificity}:::node
+        subgraph KP[Knowledge path · hybrid RAG]
+            direction LR
+            RET[retrieve]:::node --> RRK[rerank]:::node --> GEN[generate<br/>safety guard · disclaimers]:::node
+        end
+        subgraph AP[Analytical path · SQL RAG]
+            direction LR
+            SQP[SQL propose]:::node -. HITL approve .-> SQX[execute → narrate<br/>PHI stripped]:::node
+        end
+        RTR -->|knowledge| RET
+        RTR -->|analytical| SQP
     end
-    MW --> RW
+    UI --> MW
 
-    RET --> QD[(Qdrant<br/>🔒 RBAC pre-filter · hybrid search)]:::store
-    RET --> ENC[BGE dense + BM25 sparse<br/>local encoders]:::model
-    RRK --> CE[Cross-encoder reranker<br/>local]:::model
-    RTR --> GROQ[Groq LLM · llama-3.3-70b]:::model
+    ENC[BGE + BM25 · cross-encoder<br/>local models]:::model
+    GROQ[Groq LLM · llama-3.3-70b]:::model
+    QD[(Qdrant<br/>🔒 RBAC pre-filter · hybrid)]:::store
+    SDB[(SQLite · claims · tickets)]:::store
+    RET --> QD & ENC
+    RRK --> ENC
+    RTR --> GROQ
     GEN --> GROQ
-    SQP --> GROQ
-    SQX --> GROQ
-    SQX --> SDB[(SQLite<br/>claims · tickets)]:::store
+    SQX --> GROQ & SDB
 
-    GEN --> ANS([answer + citations]):::client
-    SQX --> ANS
-    ANS --> UI
+    subgraph CC[Enforced on every request]
+        direction LR
+        C1[RBAC pre-filter<br/>role → collections]:::cc
+        C2[Safety guard<br/>no unit-convert · no advice]:::cc
+        C3[PHI handling<br/>strip patient_* · never log text]:::cc
+        C4[Denial verbalizer<br/>deterministic refusals]:::cc
+    end
+
+    subgraph EO[Evaluation & Observability]
+        direction LR
+        E1[Eval harness · 9 tracks<br/>rbac · retrieval · sql · routing · safety<br/>numbers · chunk_quality · faithfulness · calibration]:::eval
+        E2[DeepEval<br/>LLM-judge]:::eval
+        E3[Admin eval<br/>dashboard]:::eval
+        E4[Observability<br/>JSON logs · request_id / X-Request-ID<br/>per-stage latency · token/cost]:::obs
+    end
+
+    RT -. applied to every stage .-> CC
+    RT -. graded + traced .-> EO
 
     classDef client fill:#e3f2fd,stroke:#1565c0,color:#0d47a1;
     classDef infra fill:#eceff1,stroke:#546e7a,color:#263238;
     classDef node fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20;
     classDef model fill:#fff3e0,stroke:#ef6c00,color:#e65100;
     classDef store fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c;
+    classDef cc fill:#fff8e1,stroke:#f9a825,color:#5f4300;
+    classDef eval fill:#e8eaf6,stroke:#3f51b5,color:#1a237e;
+    classDef obs fill:#e0f7fa,stroke:#00838f,color:#006064;
+
+    style RT fill:#fbfdff,stroke:#90caf9
+    style KP fill:#f4fbf5,stroke:#c5e1a5
+    style AP fill:#f4fbf5,stroke:#c5e1a5
+    style CC fill:#fffdf5,stroke:#f9a825
+    style EO fill:#f5f6ff,stroke:#3f51b5
 ```
+
 
 **Ingestion (offline, run once):**
 
@@ -127,18 +137,7 @@ and Pydantic boundaries.
 
 ## Repository layout
 
-```
-backend/
-  src/          FastAPI app (imported as `from src...`) — api, graph, services, adapters, models, config
-  ingestion/    ingest.py, ensure_ingested.py (compose entrypoint), run_evals.py, data/ (docs + SQLite DB)
-  evals/        golden sets, test_*.py (9 tracks), results/
-frontend/       Streamlit app (chat + eval dashboard)
-docs/           ARCHITECTURE, EVAL_PLAN, PROMPTS, GUARDRAILS, DATA_DICTIONARY, DEPLOY, EXTENSIONS, …
-docker-compose.yml · Dockerfile.backend · Dockerfile.frontend · pytest.ini
-```
 
-All importable backend code lives under `backend/`, so `PYTHONPATH=backend` is the only
-path entry needed (`pytest.ini` sets this for tests).
 
 ---
 
@@ -149,10 +148,10 @@ path entry needed (`pytest.ini` sets this for tests).
 ```bash
 # 1. Configure env
 cp .env.example .env
-#    edit .env:  GROQ_API_KEY=your_key   (QDRANT_PORT=6335 already set for compose)
 
-# 2. Build + start. First run ingests the corpus (downloads embedding models,
-#    a few minutes), then the backend + frontend come up with a populated index.
+# edit .env:  GROQ_API_KEY=your_key   (QDRANT_PORT=6335 already set for compose)
+
+# 2. Build + start. First run ingests the corpus (downloads embedding models, a few minutes), then the backend + frontend come up with a populated index.
 docker compose up -d --build
 
 # 3. Open the app
@@ -170,7 +169,9 @@ backend (waits for ingest to complete, then healthcheck) → frontend`.
 
 ```bash
 docker compose logs -f backend      # follow backend logs
+
 docker compose logs ingest          # ingestion progress / "skip (already populated)"
+
 docker compose down                 # stop
 ```
 
@@ -180,13 +181,13 @@ docker compose down                 # stop
 
 One-click login buttons are on the sign-in page (passwords never rendered).
 
-| Role | Username | Password | Document collections | SQL RAG |
-|---|---|---|---|---|
-| Doctor | `dr.mehta` | `doctor123` | clinical, nursing, general | ✗ |
-| Nurse | `nurse.priya` | `nurse123` | nursing, general | ✗ |
-| Billing | `billing.ravi` | `billing123` | billing, general | ✓ |
-| Technician | `tech.anand` | `tech123` | equipment, general | ✗ |
-| Admin | `admin.sys` | `admin123` | **all** | ✓ |
+| Role | Username | Document collections | SQL RAG |
+|---|---|---|---|
+| Doctor | `dr.mehta` | clinical, nursing, general | ✗ |
+| Nurse | `nurse.priya` | nursing, general | ✗ |
+| Billing | `billing.ravi` | billing, general | ✓ |
+| Technician | `tech.anand` | equipment, general | ✗ |
+| Admin | `admin.sys` | **all** | ✓ |
 
 **Try it:**
 - As **Doctor**: *"first-line drug for Type 2 Diabetes?"* → cited clinical answer.
@@ -201,13 +202,16 @@ One-click login buttons are on the sign-in page (passwords never rendered).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
+
 pip install -r requirements.txt -r requirements-dev.txt
 
-docker compose up -d qdrant                    # Qdrant only (host 6335)
+docker compose up -d qdrant  #Qdrant only (host 6335)
 
 # ingest once, then run backend + frontend
 PYTHONPATH=backend python backend/ingestion/ingest.py
+
 PYTHONPATH=backend uvicorn src.api.app:app --reload --port 8000
+
 MEDIBOT_API_URL=http://localhost:8000 streamlit run frontend/app.py --server.port 8700
 ```
 
@@ -220,15 +224,25 @@ Evaluation tab** (`POST /evals/run`), or headless:
 
 ```bash
 # all tracks (needs Groq for judge tracks) — writes JUnit XML + logs to backend/evals/results/
+
 pytest backend/evals/ -v
 
 # deterministic-only (no Groq tokens), RBAC first / fail-fast
+
 pytest backend/evals/test_rbac.py -x && \
   pytest backend/evals/test_safety.py backend/evals/test_chunk_quality.py
 ```
 
-Tracks: RBAC red-team (zero-leak, fail-closed), retrieval A/B (P@3/MRR), SQL correctness,
-routing accuracy, numeric faithfulness, chunk quality, medical safety, judge calibration.
+`Tracks`: 
+- RBAC red-team (zero-leak, fail-closed), 
+- retrieval A/B (P@3/MRR), 
+- SQL correctness,
+- routing accuracy, 
+- numeric faithfulness, 
+- chunk quality, 
+- medical safety, 
+- judge calibration.
+
 Thresholds live in `backend/evals/eval_config.py`. See [`docs/EVAL_PLAN.md`](docs/EVAL_PLAN.md).
 
 > **Note:** Groq's free tier has per-minute and per-day token caps; the LLM-judge tracks

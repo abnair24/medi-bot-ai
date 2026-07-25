@@ -74,4 +74,15 @@ htmlcov/
 .claude/settings.json
 screenshots/
 discussion/
-docs/
+docs/ARCHITECTURE_REVIEW.md
+docs/CODING_STANDARDS.md
+docs/DATA_DICTIONARY.md
+docs/DATA_HANDLING.md
+docs/DEPLOY.md
+docs/GOLDEN_SET.md
+docs/GUARDRAILS.md
+docs/INSTRUCTIONS.md
+docs/PROMPTS.md
+docs/RBAC_REDTEAM.md
+CLAUDE.md
+REPO_MANIFEST.md
