@@ -1,7 +1,10 @@
-# Medi-Bot-AI — RBAC-Aware Clinical RAG Assistant
+# Medi-Bot-AI — RBAC-Aware Hospital Knowledge & Analytics Agent
 
-Medibot-AI is an internal AI assistant.Staff ask natural-language questions and get **cited answers from the right
-documents** — scoped to what their role is allowed to see.
+Medi-Bot-AI is an internal AI **agent** for a hospital network. Staff ask natural-language
+questions and get **cited answers from the right documents *and* the right data** — an intent
+gate and router decide whether to answer from protocol/policy documents (hybrid RAG) or by
+querying the claims/maintenance database (SQL), always scoped to what the user's role is
+allowed to see.
 
 ---
 
