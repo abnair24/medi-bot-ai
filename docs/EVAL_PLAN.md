@@ -17,22 +17,21 @@ self-preference bias. Thresholds live in `backend/evals/eval_config.py` — neve
 
 ## Track summary
 
-| # | Track | What it measures | Metric | Tool | Gate (CI) | Status |
-|---|---|---|---|---|---|---|
-| 1 | **RBAC red-team** | Can a restricted chunk leak to an unauthorized role? | Leak rate = leaked ÷ adversarial | pytest | **leak = 0** — fail-closed, runs **first** | ✅ built |
-| 2 | **Retrieval quality** | Did the right chunks come back? Hybrid/rerank lift over dense | P@3, MRR (bootstrap 95% CI) | numpy | hybrid+rerank **P@3 ≥ 0.70** (dense = ungated baseline) | ✅ built |
-| 3 | **Faithfulness** | Are answer claims grounded in the retrieved context? | DeepEval `FaithfulnessMetric` | DeepEval (judge) | **≥ 0.80** | ✅ built |
-| 3b | **Number match** | Doses/codes/prices/thresholds quoted **exactly** (no round/convert) | Exact-string match (whitespace-normalized) | pytest | **≥ 0.90** | ✅ built |
-| 4 | **SQL-RAG correctness** | Valid SQL → right data → faithful NL answer | Exec-success rate, result-match rate | pytest | **exec ≥ 0.90, match ≥ 0.85** | ✅ built |
-| 5 | **Routing accuracy** | Analytical vs knowledge classification (+ specificity) | Accuracy, confusion matrix | numpy / sklearn | **≥ 0.90** | ✅ built |
-| 6 | **Chunk quality** | Every chunk carries its parent heading; citations complete | Heading-present, table-intact rates | pytest | **heading ≥ 0.95, table ≥ 0.90** | ✅ built |
-| 7 | **Medical safety** | Disclaimer present, no unit conversion, no prescriptive voice | Violation count (deterministic guard) | pytest | **zero violations** — fail-closed | ✅ built |
-| 8 | **Judge calibration** | Does the LLM-judge agree with human labels? | Cohen's κ vs human labels | numpy | **none** — reported; investigate if κ < 0.70 | ✅ built |
-| 9 | Multi-turn retrieval | Query-rewrite → P@3 lift over the raw follow-up | P@3 delta | numpy | rewrite **P@3 ≥ baseline** (+0.10 on ambiguous) | 🔲 planned |
-| 10 | Rewrite faithfulness | Rewrite preserves user intent (no hallucinated topic) | DeepEval semantic similarity | DeepEval | **≥ 0.90** | 🔲 planned |
-| 11 | HITL SQL safety | Token lifecycle: approve / reject / expire / tamper / replay | Pass/fail assertions | pytest | **all pass** — fail-closed | 🔲 planned |
-| 12 | **Intent gate** | Admission control: is a turn resolved / ambiguous / empty *before* retrieval? | Accuracy, 3×3 confusion matrix | pytest (+ LLM for multiturn) | first-turn (deterministic) **= 1.0**; overall **≥ 0.85** | ✅ built |
-| 13 | **Disclaimer keying + floor** | Clinical disclaimer keyed on *central* clinical content, not any stray chunk; relevance floor drops noise | Label match (deterministic) | pytest (no LLM) | **= 1.0** — fail-closed | ✅ built |
+| # | Track | What it measures | Metric | Tool | Status |
+|---|---|---|---|---|---|
+| 1 | **RBAC red-team** | Can a restricted chunk leak to an unauthorized role? | Leak rate = leaked ÷ adversarial | pytest | ✅ built |
+| 2 | **Retrieval quality** | Did the right chunks come back? Hybrid/rerank lift over dense | P@3, MRR (bootstrap 95% CI) | numpy | ✅ built |
+| 3 | **Faithfulness** | Are answer claims grounded in the retrieved context? | DeepEval `FaithfulnessMetric` | DeepEval (judge) | ✅ built |
+| 3b | **Number match** | Doses/codes/prices/thresholds quoted **exactly** (no round/convert) | Exact-string match (whitespace-normalized) | pytest | ✅ built |
+| 4 | **SQL-RAG correctness** | Valid SQL → right data → faithful NL answer | Exec-success rate, result-match rate | pytest | ✅ built |
+| 5 | **Routing accuracy** | Analytical vs knowledge classification (+ specificity) | Accuracy, confusion matrix | numpy / sklearn | ✅ built |
+| 6 | **Chunk quality** | Every chunk carries its parent heading; citations complete | Heading-present, table-intact rates | pytest | ✅ built |
+| 7 | **Medical safety** | Disclaimer present, no unit conversion, no prescriptive voice | Violation count (deterministic guard) | pytest | ✅ built |
+| 8 | **Judge calibration** | Does the LLM-judge agree with human labels? | Cohen's κ vs human labels | numpy | ✅ built |
+| 9 | **Multi-turn retrieval lift** | Does the intent-gate *resolved* query retrieve better than the raw follow-up? | P@3 delta | numpy | 🔲 planned |
+| 10 | **HITL SQL safety** | Token lifecycle: approve / reject / expire / tamper / replay | Pass/fail assertions | pytest | 🔲 planned |
+| 11 | **Intent gate** | Admission control: is a turn resolved / ambiguous / empty *before* retrieval? | Accuracy, 3×3 confusion matrix | pytest (+ LLM for multiturn) | ✅ built |
+| 12 | **Disclaimer keying + floor** | Clinical disclaimer keyed on *central* clinical content, not any stray chunk; relevance floor drops noise | Label match (deterministic) | pytest (no LLM)| ✅built |
 
 ---
 
