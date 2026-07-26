@@ -1,11 +1,11 @@
-# Medi-Bot-AI — RBAC-Aware Clinical RAG Assistant
+# 🏥 Medi-Bot-AI — RBAC-Aware Clinical RAG Assistant
 
 Medibot-AI is an internal AI assistant.Staff ask natural-language questions and get **cited answers from the right
 documents** — scoped to what their role is allowed to see.
 
 ---
 
-## Highlights
+## 🚀 Highlights
 
 | Capability | What it does |
 |---|---|
@@ -21,7 +21,7 @@ documents** — scoped to what their role is allowed to see.
 
 ---
 
-## Architecture
+## 🗺️ Architecture
 
 ```mermaid
 flowchart TB
@@ -123,7 +123,7 @@ and Pydantic boundaries.
 
 ---
 
-## Tech stack
+## 🛠️ Tech stack
 
 | Concern | Choice |
 |---|---|
@@ -141,7 +141,7 @@ and Pydantic boundaries.
 
 ---
 
-## Quick start (Docker — recommended)
+## ⚡ Quick start (Docker — recommended)
 
 **Prerequisites:** Docker, and a free [Groq API key](https://console.groq.com).
 
@@ -220,7 +220,7 @@ MEDIBOT_API_URL=http://localhost:8000 streamlit run frontend/app.py --server.por
 
 ---
 
-## Evaluations
+## 🔑 Evaluations
 
 Tracks are **run on demand from the admin Evaluation tab** (`POST /evals/run`), or headless:
 
@@ -257,7 +257,7 @@ Thresholds live in `backend/evals/eval_config.py`. See [`docs/EVAL_PLAN.md`](doc
 
 ---
 
-## Observability
+## 🔍 Observability
 
 PHI-safe by design — only IDs, counts, scores, and durations are ever logged.
 
@@ -271,12 +271,10 @@ Visual tracing (Arize Phoenix) is planned — see Roadmap.
 
 ---
 
-## Roadmap
+## 🪧 Roadmap
 
 - **Agentic SQL tool-loop** — replace the linear SQL path with a ReAct sub-graph
   (multi-step queries, self-correction). *(Phase 12)*
 - **Distributed tracing with Arize Phoenix** — per-request span waterfalls + latency/cost
   dashboards on top of the existing PHI-safe logs. *(Phase 12)*
-- **Extension eval tracks** — intent-gate and disclaimer-keying tracks are **built**;
-  dedicated multi-turn-retrieval-lift and HITL-SQL-token-lifecycle tracks are next.
 
