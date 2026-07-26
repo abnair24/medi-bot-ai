@@ -1,7 +1,6 @@
 # 🏥 Medi-Bot-AI — RBAC-Aware Clinical RAG Assistant
 
-Medibot-AI is an internal AI assistant.Staff ask natural-language questions and get **cited answers from the right
-documents** — scoped to what their role is allowed to see.
+Medibot-AI is an internal AI assistant.Staff ask natural-language questions and get **cited answers from the right documents** — scoped to what their role is allowed to see.
 
 ---
 
