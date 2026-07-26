@@ -1,4 +1,4 @@
-# 🏥 Medi-Bot-AI — RBAC-Aware Hospital Knowledge & Analytics Agent
+# 🏥 Medi-Bot-AI — RBAC-Aware Medical Agent
 
 Medi-Bot-AI is an internal AI **agent** for a hospital network. Staff ask natural-language
 questions and get **cited answers from the right documents *and* the right data** — an intent
