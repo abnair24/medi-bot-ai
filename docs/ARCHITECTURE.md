@@ -1,4 +1,4 @@
-# MediBot — Architecture
+# MediBotAI — Architecture
 
 > Component layout, LangGraph state machine, adapter pattern, Pydantic boundaries,
 > and folder structure. Read this before writing code.
@@ -237,14 +237,10 @@ or router + SQL-gen + narration).
 
 ```
 medibot/
-├── INSTRUCTIONS.md
 ├── CLAUDE.md
 ├── docker-compose.yml
 ├── pytest.ini                        # pythonpath = backend; testpaths = backend/evals
-├── requirements.txt
-├── .github/
-│   └── workflows/
-│       └── eval.yml                  # CI gate — runs evals on push
+├── requirements.txt                 
 ├── docs/                             # ARCHITECTURE.md, EVAL_PLAN.md, PROMPTS.md, …
 ├── frontend/
 │   └── app.py                        # Streamlit — Tab 1 (demo) + Tab 2 (eval)
