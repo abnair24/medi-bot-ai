@@ -1,0 +1,112 @@
+[
+  {
+    "id": "I-001",
+    "history": [],
+    "question": "EXPLAIN",
+    "expected_state": "empty",
+    "rationale": "First-turn bare imperative, no topic to inherit — must refuse, not retrieve."
+  },
+  {
+    "id": "I-002",
+    "history": [],
+    "question": "one more",
+    "expected_state": "empty",
+    "rationale": "Continuation token with no prior topic — contentless."
+  },
+  {
+    "id": "I-003",
+    "history": [],
+    "question": "go on",
+    "expected_state": "empty",
+    "rationale": "Filler continuation, first turn — nothing to continue."
+  },
+  {
+    "id": "I-004",
+    "history": [],
+    "question": "when",
+    "expected_state": "empty",
+    "rationale": "Single meta interrogative, no subject — contentless."
+  },
+  {
+    "id": "I-005",
+    "history": [],
+    "question": "ok continue",
+    "expected_state": "empty",
+    "rationale": "Acknowledgement + continuation, no subject."
+  },
+  {
+    "id": "I-006",
+    "history": [],
+    "question": "What is the ceftriaxone dose for pyelonephritis?",
+    "expected_state": "resolved",
+    "rationale": "Self-contained clinical question — names its own subject."
+  },
+  {
+    "id": "I-007",
+    "history": [],
+    "question": "How many claims were rejected last month?",
+    "expected_state": "resolved",
+    "rationale": "Self-contained analytical question — proceeds to router/SQL."
+  },
+  {
+    "id": "I-008",
+    "history": [],
+    "question": "why no response",
+    "expected_state": "resolved",
+    "rationale": "Has a content token ('response'); the gate lets it through and the downstream relevance floor handles off-domain noise, not the intent gate."
+  },
+  {
+    "id": "I-009",
+    "history": [
+      {"role": "user", "content": "What are the claim exclusion codes?"},
+      {"role": "assistant", "content": "The exclusion codes EXCL-01 through EXCL-08 cover non-disclosure, waiting-period, non-empanelled provider, and related rejection reasons."}
+    ],
+    "question": "explain",
+    "expected_state": "resolved",
+    "rationale": "Single prior topic (exclusion codes) — 'explain' resolves to it deterministically in spirit; one candidate, not ambiguous."
+  },
+  {
+    "id": "I-010",
+    "history": [
+      {"role": "user", "content": "What is the first-line drug for Type 2 Diabetes?"},
+      {"role": "assistant", "content": "Metformin is the first-line agent per the formulary."}
+    ],
+    "question": "what's the max dose?",
+    "expected_state": "resolved",
+    "rationale": "Anaphora resolvable to the single topic (Metformin)."
+  },
+  {
+    "id": "I-011",
+    "history": [
+      {"role": "user", "content": "What is the treatment protocol for dengue fever?"},
+      {"role": "assistant", "content": "Dengue management focuses on fluid balance and platelet monitoring per the clinical protocol."}
+    ],
+    "question": "patient now has diarrhoea",
+    "expected_state": "resolved",
+    "rationale": "New self-contained clinical scenario — must NOT merge with dengue; resolves on its own subject."
+  },
+  {
+    "id": "I-012",
+    "history": [
+      {"role": "user", "content": "What is the ceftriaxone dose?"},
+      {"role": "assistant", "content": "Ceftriaxone is dosed at 1-2 g IV once daily per the formulary."},
+      {"role": "user", "content": "What is the metronidazole dose?"},
+      {"role": "assistant", "content": "Metronidazole is dosed at 500 mg IV every 8 hours per the formulary."}
+    ],
+    "question": "any contraindications?",
+    "expected_state": "ambiguous",
+    "rationale": "Subject-less follow-up with TWO candidate drugs — must clarify, not guess."
+  },
+  {
+    "id": "I-013",
+    "history": [
+      {"role": "user", "content": "What is the treatment protocol for dengue fever?"},
+      {"role": "assistant", "content": "Dengue management focuses on fluid balance and platelet monitoring."},
+      {"role": "user", "content": "What are the claim exclusion codes?"},
+      {"role": "assistant", "content": "Exclusion codes EXCL-01 through EXCL-08 cover the standard rejection reasons."}
+    ],
+    "question": "explain that",
+    "expected_state": "ambiguous",
+    "rationale": "Two distinct prior topics (dengue protocol, exclusion codes) — 'that' can't be pinned to one."
+  }
+]

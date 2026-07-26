@@ -71,6 +71,19 @@ def router_service():
 
 
 @pytest.fixture(scope="session")
+def intent_service():
+    """Real IntentService wired with the live Groq LLM adapter (Track 12).
+
+    Session-scoped: one adapter reused across all intent cases. Same DI wiring as
+    graph/builder.py. First-turn cases resolve deterministically (no API call); cases
+    with history exercise the LLM adjudication path.
+    """
+    from src.adapters.llm_adapter import LLMAdapter
+    from src.services.intent_service import IntentService
+    return IntentService(llm=LLMAdapter())
+
+
+@pytest.fixture(scope="session")
 def rerank_service(reranker):
     """Real RerankService over the cross-encoder adapter (Track 3 pipeline)."""
     from src.services.rerank_service import RerankService

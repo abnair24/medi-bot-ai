@@ -1,4 +1,5 @@
 from src.adapters.llm_adapter import LLMAdapter
+from src.config.settings import settings
 from src.models.chunk import ChunkResult
 from src.models.schemas import Source
 from src.services.denial_service import verbalize_denial
@@ -139,6 +140,33 @@ class GenerationService:
             )
             return denial.message, []
 
+        # Relevance floor — deterministic backstop UNDER the LLM sentinel (see
+        # _keep_above_floor). Drops keyword-collision noise before it reaches the prompt.
+        kept = _keep_above_floor(chunks)
+        if not kept:
+            # Everything was noise. Same fork as the sentinel path: access miss → RBAC
+            # denial (answer lives behind RBAC), else genuinely absent → no-content.
+            if restricted:
+                denial = verbalize_denial(role)
+                log_request_event(
+                    request_id=request_id,
+                    role=role,
+                    event="generation_rbac_refusal",
+                    chunk_count=len(chunks),
+                    reason="below_relevance_floor",
+                    accessible_collections=denial.accessible_collections,
+                )
+                return denial.message, []
+            log_request_event(
+                request_id=request_id,
+                role=role,
+                event="generation_no_relevant_content",
+                chunk_count=len(chunks),
+                reason="below_relevance_floor",
+            )
+            return _NO_RELEVANT_MESSAGE, []
+        chunks = kept
+
         context = _build_context(chunks)
         prompt = _RAG_PROMPT.format(context=context, question=question)
 
@@ -193,7 +221,7 @@ class GenerationService:
         collections_used = {c.collection for c in chunks}
         violations = run_safety_checks(
             answer,
-            is_clinical=bool(collections_used & _CLINICAL_COLLECTIONS),
+            is_clinical=_clinical_is_central(chunks),
             disclaimer_markers=_DISCLAIMER_MARKERS,
         )
         if violations:
@@ -238,20 +266,54 @@ def _build_context(chunks: list[ChunkResult]) -> str:
 
 
 def _append_disclaimers(answer: str, chunks: list[ChunkResult]) -> str:
-    """Append mandatory disclaimers based on the collections present in chunks.
+    """Append mandatory disclaimers, keyed on whether clinical content is CENTRAL.
 
     Deterministic — the LLM does not decide whether a disclaimer is needed.
     Disclaimer logic from GUARDRAILS.md §3-4:
-    - clinical or nursing chunks → clinical disclaimer
+    - clinical/nursing is the answer's dominant grounding → clinical disclaimer
     - drug_formulary source → additional prescribing disclaimer
+
+    The clinical disclaimer keys on whether clinical/nursing content is CENTRAL — not
+    merely present. Keying on "any clinical chunk retrieved" wrongly stamped the clinical
+    disclaimer onto equipment/HR answers whenever a single stray nursing chunk (e.g. hand
+    hygiene) survived into the context. We treat clinical as central when it is the dominant
+    collection by count OR grounds the top-scored chunk; a lone low-ranked stray does not
+    trigger it. This tightens a false-positive without under-protecting genuine clinical
+    answers (both the count-majority and top-chunk cases still fire), and the runtime safety
+    guard remains the fail-closed backstop.
     """
-    collections_used = {c.collection for c in chunks}
     sources_used = {c.source_document.lower() for c in chunks}
 
-    if collections_used & _CLINICAL_COLLECTIONS:
+    if _clinical_is_central(chunks):
         answer += _CLINICAL_DISCLAIMER
 
     if any(kw in src for kw in _DRUG_SOURCE_KEYWORDS for src in sources_used):
         answer += _DRUG_DISCLAIMER
 
     return answer
+
+
+def _keep_above_floor(chunks: list[ChunkResult]) -> list[ChunkResult]:
+    """Drop chunks whose reranker score is below the relevance floor.
+
+    Deterministic backstop UNDER the LLM no-relevant sentinel. Cross-encoder logits below
+    settings.rerank_relevance_floor are keyword-collision noise (e.g. "why no response"
+    hitting a billing "24 hrs no response" SLA row). Removing them before the prompt stops
+    generation from stitching a confident answer out of junk. Admin — which has no RBAC
+    narrowing, so its candidate pool spans all five collections — benefits most.
+    """
+    return [c for c in chunks if c.score >= settings.rerank_relevance_floor]
+
+
+def _clinical_is_central(chunks: list[ChunkResult]) -> bool:
+    """True when clinical/nursing content dominates the answer, not just appears in it.
+
+    Central if EITHER the top-scored chunk is clinical/nursing (primary grounding) OR
+    clinical/nursing chunks are a plurality of the context. `chunks` arrives sorted by
+    reranker score descending (rerank_service), so chunks[0] is the top-scored chunk.
+    """
+    if not chunks:
+        return False
+    clinical_count = sum(1 for c in chunks if c.collection in _CLINICAL_COLLECTIONS)
+    top_is_clinical = chunks[0].collection in _CLINICAL_COLLECTIONS
+    return top_is_clinical or clinical_count * 2 > len(chunks)

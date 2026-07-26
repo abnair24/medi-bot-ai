@@ -13,6 +13,19 @@ CITATION_COMPLETENESS = 1.0  # source_document + section_title non-empty — fai
 # --- Track 5: routing accuracy ---
 ROUTING_ACCURACY_THRESHOLD = 0.90  # predicted route == expected route, over all cases
 
+# --- Track 12: intent-gate accuracy (multiturn admission control) ---
+# predicted intent_state == expected_state, over all cases. Below routing's bar because
+# the ambiguous/resolved boundary is genuinely harder than route classification, and a
+# miss degrades gracefully (over-clarify or refuse) rather than leaking or crashing.
+INTENT_ACCURACY_THRESHOLD = 0.85
+# First-turn (empty-history) cases are decided deterministically — they must be PERFECT.
+INTENT_FIRST_TURN_THRESHOLD = 1.0
+
+# --- Track 13: disclaimer keying (deterministic, no LLM) ---
+# _clinical_is_central must match the golden label on every case — fail-closed on a
+# safety-relevant guardrail, so the bar is 1.0.
+DISCLAIMER_ACCURACY_THRESHOLD = 1.0
+
 # --- Track 1: retrieval quality (dense vs hybrid vs +rerank) ---
 RETRIEVAL_P3_THRESHOLD = 0.70  # hybrid+rerank P@3 gate. Dense-only is baseline (no gate).
 

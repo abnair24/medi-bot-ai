@@ -1,0 +1,56 @@
+[
+  {
+    "id": "D-001",
+    "description": "Equipment answer with a single stray nursing chunk at the bottom — the WHEN bug. Clinical disclaimer must NOT be appended.",
+    "chunk_collections": ["equipment", "equipment", "nursing"],
+    "expected_central": false
+  },
+  {
+    "id": "D-002",
+    "description": "Genuine clinical answer — top chunk clinical. Disclaimer appended.",
+    "chunk_collections": ["clinical", "clinical"],
+    "expected_central": true
+  },
+  {
+    "id": "D-003",
+    "description": "Nursing answer, top chunk nursing. Disclaimer appended.",
+    "chunk_collections": ["nursing", "general"],
+    "expected_central": true
+  },
+  {
+    "id": "D-004",
+    "description": "Pure billing answer — no clinical content at all. No disclaimer.",
+    "chunk_collections": ["billing", "billing"],
+    "expected_central": false
+  },
+  {
+    "id": "D-005",
+    "description": "Clinical is a plurality (2 of 3) though top chunk is general. Central by count.",
+    "chunk_collections": ["general", "clinical", "clinical"],
+    "expected_central": true
+  },
+  {
+    "id": "D-006",
+    "description": "Single clinical chunk among equipment/general, not top-ranked. Non-central stray.",
+    "chunk_collections": ["equipment", "equipment", "general", "clinical"],
+    "expected_central": false
+  },
+  {
+    "id": "D-007",
+    "description": "Top chunk clinical even though clinical is a minority. Central by top-chunk rule.",
+    "chunk_collections": ["clinical", "equipment", "equipment", "general"],
+    "expected_central": true
+  },
+  {
+    "id": "D-008",
+    "description": "Even split, top chunk non-clinical — clinical not a strict plurality. No disclaimer.",
+    "chunk_collections": ["equipment", "clinical"],
+    "expected_central": false
+  },
+  {
+    "id": "D-009",
+    "description": "General-only informational answer. No disclaimer.",
+    "chunk_collections": ["general", "general"],
+    "expected_central": false
+  }
+]

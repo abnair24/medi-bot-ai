@@ -18,8 +18,12 @@ build/
 # ── Eval outputs (may contain synthetic but sensitive data) ──
 backend/evals/results/
 
-# ── LangGraph checkpointer (runtime state) ──────────
+# ── LangGraph checkpointer + chat session index (runtime state) ──────────
 backend/ingestion/data/checkpoints.db
+backend/ingestion/data/sessions.db
+# SQLite WAL sidecars — regenerated at runtime, never commit them
+backend/ingestion/data/*.db-shm
+backend/ingestion/data/*.db-wal
 
 # ── DeepEval (telemetry + local cache, machine-generated) ──
 .deepeval/
@@ -85,6 +89,7 @@ docs/INSTRUCTIONS.md
 docs/PROMPTS.md
 docs/RBAC_REDTEAM.md
 docs/EXTENSIONS.md
+docs/PHASE11_PLAN.md
 CLAUDE.md
 REPO_MANIFEST.md
 .claude/

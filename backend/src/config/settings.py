@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     # aggregate falls back to reranker_final_k (rarely hits rerank — usually the SQL path).
     reranker_final_k_point_lookup: int = 3
     reranker_final_k_exploratory: int = 5
+    # Relevance floor on the cross-encoder logit — a deterministic BACKSTOP under the
+    # LLM no-relevant sentinel, not a replacement for it. Cross-encoder logits for this
+    # corpus run roughly [-11, +11]; a genuinely correct chunk can still score around -6,
+    # so this floor is set LOW on purpose — it only drops egregious keyword-collision
+    # noise (e.g. "why no response" matching a billing "24 hrs no response" SLA row).
+    # If EVERY reranked chunk falls below it, generation refuses instead of stitching junk.
+    rerank_relevance_floor: float = -9.0
 
     # --- Retrieval ---
     retrieval_top_k: int = 10
@@ -60,11 +67,21 @@ class Settings(BaseSettings):
 
     # --- LangGraph checkpointer ---
     checkpoint_db_path: str = "backend/ingestion/data/checkpoints.db"
+    # Per-user chat-session index (list past chats after re-login). Conversation CONTENT
+    # lives in the checkpointer; this store holds only session_id → user + timestamps.
+    sessions_db_path: str = "backend/ingestion/data/sessions.db"
 
     # --- Multi-turn memory ---
     # Sliding window: how many prior turns (each = user + assistant) the query rewriter
     # sees. Bounds context/cost and stops stale topics from lingering across a long chat.
     conversation_window_turns: int = 3
+    # Hard cap on turns per chat session — after this many completed turns the user must
+    # start a new chat. Distinct from the rewriter window above (which only limits context).
+    max_turns_per_session: int = 5
+    # Intent gate: when a follow-up can't be pinned to ONE prior topic, pause and ask the
+    # user which they meant (HITL clarify) instead of guessing. When False, an ambiguous
+    # follow-up is refused with a "please name the topic" message rather than interrupting.
+    intent_clarify_enabled: bool = True
 
     # --- Auth ---
     jwt_secret: str = "change-this-in-production"

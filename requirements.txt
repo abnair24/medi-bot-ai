@@ -13,6 +13,9 @@ langgraph>=0.2.0
 langchain-core>=0.2.0
 langgraph-checkpoint-sqlite>=1.0.0
 
+# --- SQL safety (Phase 12 agentic SQL: read-only AST validation) ---
+sqlglot>=25.0.0
+
 # --- Vector store ---
 qdrant-client>=1.9.0
 

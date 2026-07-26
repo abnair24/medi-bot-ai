@@ -3,16 +3,20 @@ from langgraph.graph import END
 from src.graph.state import MediBotState
 
 
-def should_rewrite(state: MediBotState) -> str:
-    """Skip rewrite node on the first turn — no history means no ambiguity to resolve.
+def route_after_intent(state: MediBotState) -> str:
+    """Route out of the intent gate: proceed to the router, or END on a refusal.
+
+    resolve_intent_node sets intent_state and, on a miss, already wrote the refusal
+    answer into state. A resolved intent proceeds to routing; an "empty" verdict
+    (contentless, or ambiguous-with-clarify-disabled) ends immediately without retrieval.
 
     Returns:
-        "rewrite" if prior conversation history exists.
-        "router" to skip directly to routing on the first turn.
+        "router" when intent_state == "resolved".
+        END when intent_state == "empty" (answer already set — no retrieval).
     """
-    if state.get("history"):
-        return "rewrite"
-    return "router"
+    if state.get("intent_state") == "resolved":
+        return "router"
+    return END
 
 
 def route_after_router(state: MediBotState) -> str:

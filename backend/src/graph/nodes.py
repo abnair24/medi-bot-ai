@@ -4,12 +4,24 @@ from src.config.settings import settings
 from src.graph.state import MediBotState
 from src.services.denial_service import verbalize_denial
 from src.services.generation_service import GenerationService
+from src.services.intent_service import IntentService
 from src.services.rerank_service import RerankService
 from src.services.retrieval_service import RetrievalService
-from src.services.rewrite_service import RewriteService
 from src.services.router_service import RouterService
 from src.services.sql_rag_service import SQLRAGService
 from src.utils.exceptions import RBACError
+
+# Shown when a follow-up can't be pinned to one prior topic and HITL clarify is disabled.
+_AMBIGUOUS_REFUSAL = (
+    "Your question refers back to an earlier topic, but more than one could apply. "
+    "Please ask again naming the specific topic you mean."
+)
+
+# Shown when the message has no content and no prior topic to inherit (state=empty).
+_EMPTY_REFUSAL = (
+    "I couldn't identify a question to answer. Please ask a full question — for example, "
+    "name the protocol, drug, code, or policy you need."
+)
 
 
 # Two-axis router: query specificity → how many reranked chunks feed generation.
@@ -24,20 +36,58 @@ def _final_k_for_specificity(specificity: str | None) -> int:
     return settings.reranker_final_k  # aggregate / unknown → default
 
 
-def make_rewrite_node(svc: RewriteService):
-    """Return a node that rewrites the question for multi-turn clarity."""
+def make_resolve_intent_node(svc: IntentService):
+    """Return the intent-gate node — admission control in front of the router.
 
-    async def rewrite_node(state: MediBotState) -> dict:
-        rewritten = await svc.rewrite(
+    Three outcomes (see IntentService / route_after_intent):
+      * resolved  → overwrite `question` with the self-contained query, continue to router.
+      * empty     → set the refusal answer and intent_state="empty"; the edge routes to END
+                    (never retrieves).
+      * ambiguous → if HITL clarify is enabled, interrupt() and ask the user which topic they
+                    meant; the resume value becomes the resolved query and we continue. If
+                    disabled, refuse deterministically (state="empty") — we never guess.
+    """
+
+    async def resolve_intent_node(state: MediBotState) -> dict:
+        verdict = await svc.resolve(
             question=state["question"],
             history=state.get("history", []),
             request_id=state["request_id"],
             role=state["role"],
         )
-        # Overwrite question in place — all downstream nodes read the same key.
-        return {"question": rewritten}
 
-    return rewrite_node
+        if verdict.state == "resolved":
+            # Overwrite question in place — all downstream nodes read the same key.
+            return {
+                "question": verdict.resolved_query or state["question"],
+                "intent_state": "resolved",
+            }
+
+        if verdict.state == "ambiguous":
+            if not settings.intent_clarify_enabled:
+                return {"answer": _AMBIGUOUS_REFUSAL, "sources": [], "intent_state": "empty"}
+            # Pause and ask the user which prior topic they meant. On resume, interrupt()
+            # returns the clarification string, which becomes the resolved retrieval query.
+            clarification = interrupt(
+                {"clarify_prompt": _build_clarify_prompt(verdict.candidates),
+                 "candidates": verdict.candidates}
+            )
+            resolved = (clarification or "").strip() or state["question"]
+            return {"question": resolved, "intent_state": "resolved",
+                    "clarify_candidates": verdict.candidates}
+
+        # empty
+        return {"answer": _EMPTY_REFUSAL, "sources": [], "intent_state": "empty"}
+
+    return resolve_intent_node
+
+
+def _build_clarify_prompt(candidates: list[str]) -> str:
+    """Build the user-facing 'did you mean X or Y?' question from candidate topics."""
+    if len(candidates) >= 2:
+        options = ", ".join(candidates[:-1]) + f", or {candidates[-1]}"
+        return f"Your question could refer to a few topics. Did you mean: {options}?"
+    return "Could you clarify which topic your question refers to?"
 
 
 def make_router_node(svc: RouterService):

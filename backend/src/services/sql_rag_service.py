@@ -1,3 +1,5 @@
+from datetime import date
+
 from src.adapters.llm_adapter import LLMAdapter
 from src.adapters.sql_adapter import SQLAdapter
 from src.config.access import SQL_RAG_ROLES
@@ -14,6 +16,18 @@ _PHI_COLUMNS: frozenset[str] = frozenset({"patient_name", "patient_id"})
 _SQL_GEN_PROMPT = """\
 You are a SQL expert. Given the database schema below, write a SQLite query to answer the
 user's question.
+
+Today's date is {today} (YYYY-MM-DD). Use THIS literal date for every relative-date
+phrase. NEVER use DATE('now'), CURRENT_DATE, or the system clock — the data's dates are
+fixed and will NOT match the real clock, so 'now' returns nothing.
+
+Compute the literal 'YYYY' / 'YYYY-MM' yourself from {today} and embed it as a string:
+- "this year"  → strftime('%Y', <date_col>) = the 4-digit year of {today}
+- "last year"  → strftime('%Y', <date_col>) = that year minus 1
+- "this month" → strftime('%Y-%m', <date_col>) = the year-month of {today}
+- "last month" → strftime('%Y-%m', <date_col>) = the year-month of the previous month
+- a date range → <date_col> >= 'YYYY-MM-DD' AND <date_col> < 'YYYY-MM-DD'
+Match the phrase exactly: "this year" filters the whole YEAR, not a month.
 
 Schema:
 - claims(claim_id TEXT, patient_id TEXT, patient_name TEXT, department TEXT,
@@ -33,7 +47,11 @@ Rules:
 - Return ONLY the SQL query, no explanation, no markdown fences.
 - Use exact column names and value strings from the schema above.
 - For percentages, compute as 100.0 * count / total.
-- Date columns are TEXT in YYYY-MM-DD format.
+- Date columns are TEXT in YYYY-MM-DD format. Filter a month with
+  strftime('%Y-%m', <date_col>) = 'YYYY-MM' and a year with
+  strftime('%Y', <date_col>) = 'YYYY'. Never compare only SUBSTR of a hardcoded date.
+- For claims, "approved/resolved/rejected <when>" refers to resolved_date;
+  "submitted/filed <when>" refers to submitted_date.
 - When the question asks which group has the most/least/highest/top (a ranking),
   SELECT BOTH the grouping column AND the aggregate value — e.g.
   SELECT department, COUNT(*) AS claim_count FROM claims GROUP BY department
@@ -51,7 +69,14 @@ The user asked: {question}
 The database returned: {result}
 
 Write a clear, concise natural-language answer based on this result. Include the actual
-numbers. If the result is empty or null, say that no matching data was found.\
+numbers.
+
+Rules:
+- ALL monetary amounts are Indian Rupees. Format every amount with the ₹ symbol and
+  Indian digit grouping (e.g. 220500 → ₹2,20,500). NEVER use "$" or "USD" — there are no
+  dollar amounts in this database, whether the claim was approved, rejected, or pending.
+- Report amounts exactly as returned; do not convert, round, or invent a currency.
+- If the result is empty or null, say that no matching data was found.\
 """
 
 
@@ -95,7 +120,9 @@ class SQLRAGService:
 
         with stopwatch() as elapsed_ms:
             raw_sql = await self._llm.generate(
-                _SQL_GEN_PROMPT.format(question=question),
+                _SQL_GEN_PROMPT.format(
+                    question=question, today=date.today().isoformat()
+                ),
                 temperature=0.0,
             )
         clean_sql = strip_sql_fences(raw_sql)

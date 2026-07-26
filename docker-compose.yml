@@ -29,6 +29,7 @@ services:
       - QDRANT_PORT=6333               # override .env 6000 — inter-container uses the
                                         # internal port, not the host-remapped one
       - EVALS_ENABLED=true              # mount admin-only /evals/* eval dashboard
+      - SQL_HITL_ENABLED=true           # analytical (SQL) queries pause for human approve/reject
     volumes:
       - ./backend/ingestion/data:/app/backend/ingestion/data  # SQLite DB + checkpoints persist on host
       - ./backend/evals/results:/app/backend/evals/results    # eval reports persist + host-visible

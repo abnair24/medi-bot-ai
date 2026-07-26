@@ -24,6 +24,10 @@ class MediBotState(TypedDict, total=False):
     history: list[dict]     # prior turns: [{"role": "user"|"assistant", "content": str}]
     session_id: str | None  # LangGraph thread_id — used for multi-turn checkpointing
 
+    # --- Set by resolve_intent_node (admission gate, runs before the router) ---
+    intent_state: str | None       # "resolved" | "ambiguous" | "empty"
+    clarify_candidates: list[str]  # competing prior topics when intent_state == "ambiguous"
+
     # --- Set by router_node (two-axis router) ---
     route: str | None        # "hybrid_rag" or "sql_rag"
     specificity: str | None  # "point_lookup" | "aggregate" | "exploratory" — tunes rerank depth

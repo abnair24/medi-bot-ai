@@ -20,6 +20,7 @@ from src.api.auth_router import router as auth_router
 from src.api.chat_router import router as chat_router
 from src.config.settings import settings
 from src.graph.builder import build_graph
+from src.services.chat_session_store import ChatSessionStore
 from src.utils import token_meter
 from src.utils.exceptions import (
     AuthenticationError,
@@ -65,6 +66,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # adapters → services → node factories → graph assembly → compile.
         compiled_graph = build_graph(checkpointer)
         app.state.graph = compiled_graph
+
+        # Per-user chat-session index (list past chats after re-login).
+        app.state.chat_sessions = ChatSessionStore()
 
         logger.info(
             "app_startup_complete",

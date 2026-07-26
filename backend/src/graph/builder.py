@@ -7,12 +7,12 @@ from src.adapters.qdrant_adapter import QdrantAdapter
 from src.adapters.reranker_adapter import RerankerAdapter
 from src.adapters.sparse_adapter import SparseAdapter
 from src.adapters.sql_adapter import SQLAdapter
-from src.graph.edges import route_after_propose, route_after_router, should_rewrite
+from src.graph.edges import route_after_intent, route_after_propose, route_after_router
 from src.graph.nodes import (
     make_generate_node,
     make_rerank_node,
+    make_resolve_intent_node,
     make_retrieve_node,
-    make_rewrite_node,
     make_router_node,
     make_sql_execute_node,
     make_sql_propose_node,
@@ -20,9 +20,9 @@ from src.graph.nodes import (
 from src.graph.state import MediBotState
 from src.services.generation_service import GenerationService
 from src.services.hyde_service import HyDEService
+from src.services.intent_service import IntentService
 from src.services.rerank_service import RerankService
 from src.services.retrieval_service import RetrievalService
-from src.services.rewrite_service import RewriteService
 from src.services.router_service import RouterService
 from src.services.sql_rag_service import SQLRAGService
 
@@ -61,14 +61,14 @@ def build_graph(checkpointer: AsyncSqliteSaver):
     rerank_svc = RerankService(reranker=reranker)
     generation_svc = GenerationService(llm=llm)
     router_svc = RouterService(llm=llm)
-    rewrite_svc = RewriteService(llm=llm)
+    intent_svc = IntentService(llm=llm)
     sql_rag_svc = SQLRAGService(llm=llm, sql=sql)
 
     # --- Graph assembly ---
     graph = StateGraph(MediBotState)
 
     # Nodes
-    graph.add_node("rewrite", make_rewrite_node(rewrite_svc))
+    graph.add_node("resolve_intent", make_resolve_intent_node(intent_svc))
     graph.add_node("router", make_router_node(router_svc))
     graph.add_node("retrieve", make_retrieve_node(retrieval_svc))
     graph.add_node("rerank", make_rerank_node(rerank_svc))
@@ -76,13 +76,15 @@ def build_graph(checkpointer: AsyncSqliteSaver):
     graph.add_node("sql_rag", make_sql_propose_node(sql_rag_svc))
     graph.add_node("sql_execute", make_sql_execute_node(sql_rag_svc))
 
-    # Edges — START branches on history presence
+    # Edges — the intent gate runs first (admission control), then branches:
+    # resolved → router; empty/refused → END (never retrieves). It may interrupt() for
+    # HITL clarify on an ambiguous follow-up, resuming into the resolved path.
+    graph.add_edge(START, "resolve_intent")
     graph.add_conditional_edges(
-        START,
-        should_rewrite,
-        {"rewrite": "rewrite", "router": "router"},
+        "resolve_intent",
+        route_after_intent,
+        {"router": "router", END: END},
     )
-    graph.add_edge("rewrite", "router")
 
     # Router branches on route decision
     graph.add_conditional_edges(

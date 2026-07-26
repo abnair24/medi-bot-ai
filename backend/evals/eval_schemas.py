@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
 
-from src.models.schemas import Collection, Role, RouteType
+from src.models.schemas import Collection, IntentState, Role, RouteType
 from src.services.safety_guard import ViolationType
 
 # The five adversarial vectors from docs/RBAC_REDTEAM.md, as a closed type.
@@ -80,6 +80,69 @@ class RoutingCase(BaseModel):
         default=False,
         description="Marks a semantically ambiguous case near the analytical/knowledge "
         "line. Lets the harness report boundary accuracy separately from clear-cut cases.",
+    )
+
+
+class HistoryTurn(BaseModel):
+    """One prior conversation turn feeding the intent gate (Track 12)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1)
+
+
+class IntentCase(BaseModel):
+    """One intent-gate case (Track 12). Loaded from evals/golden/intent.json.
+
+    The test runs (history, question) through IntentService.resolve() and compares the
+    predicted state to expected_state. This is the admission gate in front of the router:
+    it decides WHETHER a turn is answerable before any retrieval runs.
+
+    - "resolved": self-contained OR a follow-up pinnable to one prior topic → proceed.
+    - "ambiguous": a subject-less follow-up with >=2 candidate topics → clarify (HITL).
+    - "empty": contentless with no recoverable prior intent → refuse, never retrieve.
+
+    First-turn cases (empty history) are decided deterministically (no LLM); cases with
+    history exercise the LLM adjudication path. Synthetic queries only — safe to print.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str = Field(min_length=1, description="Stable case ID, e.g. 'I-001'.")
+    history: list[HistoryTurn] = Field(
+        default_factory=list,
+        description="Prior turns. Empty = first-turn (deterministic) case.",
+    )
+    question: str = Field(min_length=1, description="The latest user message.")
+    expected_state: IntentState = Field(
+        description="Ground-truth gate verdict: resolved / ambiguous / empty."
+    )
+    rationale: str = Field(
+        default="", description="Why this is the correct verdict — provenance, not asserted."
+    )
+
+
+class DisclaimerCase(BaseModel):
+    """One disclaimer-keying case (Track 13). Loaded from evals/golden/disclaimer.json.
+
+    Deterministic (NO LLM): builds ChunkResult stubs from `chunk_collections` in rank
+    order (index 0 = top-scored) and asserts generation_service._clinical_is_central()
+    matches `expected_central`. Guards the bug where a single stray nursing/clinical chunk
+    forced the clinical disclaimer onto an equipment/HR answer.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str = Field(min_length=1, description="Stable case ID, e.g. 'D-001'.")
+    description: str = Field(description="Human-readable intent of this case.")
+    chunk_collections: list[Collection] = Field(
+        min_length=1,
+        description="Collections of the reranked chunks, in score order (0 = top).",
+    )
+    expected_central: bool = Field(
+        description="True if clinical/nursing content should be treated as central "
+        "(→ clinical disclaimer appended); False if it's a non-central stray.",
     )
 
 

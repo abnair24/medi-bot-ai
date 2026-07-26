@@ -12,9 +12,11 @@ documents** — scoped to what their role is allowed to see.
 | **Hybrid RAG** | Dense (BGE) + sparse (BM25) retrieval fused in Qdrant, then a cross-encoder reranker. Answers are grounded in retrieved chunks with source citations. |
 | **RBAC as a pre-filter** | The role's collection allow-list is applied *inside* the Qdrant query — restricted chunks are never returned to the app or the LLM, not post-filtered after the fact. |
 | **SQL RAG** | Natural-language → SQL over the claims/maintenance database, gated to `billing_executive` and `admin`, with PHI columns stripped before narration. |
-| **LangGraph orchestration** | A router splits analytical vs knowledge queries; multi-turn memory (SqliteSaver) and optional human-in-the-loop SQL approval (`interrupt()`) are native. |
-| **Deterministic medical safety** | Disclaimers appended in code (not left to the LLM), plus a guard that blocks unit conversions and prescriptive/advice-giving language. |
-| **Eval harness** | 9 tracks (RBAC red-team, retrieval A/B, SQL correctness, routing, numeric faithfulness, chunk quality, safety, judge calibration) with an admin dashboard. |
+| **Intent gate (admission control)** | Before any retrieval, a gate classifies each turn as *resolved* (answer it), *ambiguous* (ask which prior topic — HITL clarify), or *empty* (refuse; never retrieve). Stops contentless/keyword-collision inputs from producing confident wrong answers. |
+| **LangGraph orchestration** | Intent gate → router (analytical vs knowledge) → path; multi-turn memory (SqliteSaver) and human-in-the-loop `interrupt()` for both SQL approval **and** ambiguity clarification are native. |
+| **Deterministic medical safety** | Disclaimers appended in code (not the LLM) and *content-keyed* (only when clinical/nursing is central), a relevance floor that drops low-score noise before generation, plus a guard blocking unit conversions and prescriptive language. |
+| **Persistent chat management** | Per-user chat history survives logout (sidebar shows the 5 most recent; the DB keeps all), 5-turn cap per chat, New Chat, and delete (purges both the session index and the checkpointer content). |
+| **Eval harness** | 11 built tracks (RBAC red-team, retrieval A/B, SQL correctness, routing, numeric faithfulness, chunk quality, safety, judge calibration, **intent gate**, **disclaimer keying + relevance floor**) with an admin dashboard. |
 | **PHI-safe observability** | Structured JSON logs correlated by `request_id` (`X-Request-ID` header), per-stage latency, and per-request LLM token/cost accounting (`X-LLM-Tokens`). Never logs query or answer text. |
 
 ---
@@ -27,10 +29,13 @@ flowchart TB
 
     subgraph RT[Request pipeline · FastAPI + LangGraph]
         direction TB
-        MW[Request middleware<br/>request_id · latency · token meter]:::infra --> RTR{Router<br/>route × specificity}:::node
+        MW[Request middleware<br/>request_id · latency · token meter]:::infra --> IG{Intent gate<br/>resolved · ambiguous · empty}:::node
+        IG -. ambiguous .-> CLR[HITL clarify<br/>did you mean X or Y?]:::node
+        IG -. empty .-> REF[refuse<br/>no retrieval]:::node
+        IG -->|resolved| RTR{Router<br/>route × specificity}:::node
         subgraph KP[Knowledge path · hybrid RAG]
             direction LR
-            RET[retrieve]:::node --> RRK[rerank]:::node --> GEN[generate<br/>safety guard · disclaimers]:::node
+            RET[retrieve]:::node --> RRK[rerank]:::node --> GEN[generate<br/>relevance floor · safety guard<br/>content-keyed disclaimers]:::node
         end
         subgraph AP[Analytical path · SQL RAG]
             direction LR
@@ -61,7 +66,7 @@ flowchart TB
 
     subgraph EO[Evaluation & Observability]
         direction LR
-        E1[Eval harness · 9 tracks<br/>rbac · retrieval · sql · routing · safety<br/>numbers · chunk_quality · faithfulness · calibration]:::eval
+        E1[Eval harness · 11 tracks<br/>rbac · retrieval · sql · routing · safety · numbers<br/>chunk_quality · faithfulness · calibration<br/>intent gate · disclaimer keying + floor]:::eval
         E2[DeepEval<br/>LLM-judge]:::eval
         E3[Admin eval<br/>dashboard]:::eval
         E4[Observability<br/>JSON logs · request_id / X-Request-ID<br/>per-stage latency · token/cost]:::obs
@@ -107,8 +112,9 @@ flowchart LR
 - **Ingestion (offline):** Docling parses PDFs/MD → HierarchicalChunker → Pydantic-
   validated `ChunkMetadata` → dense + sparse embeddings → Qdrant (one `medibot` collection,
   `access_roles` indexed for the RBAC pre-filter).
-- **Query (per request):** router → hybrid retrieval (RBAC pre-filter) → cross-encoder
-  rerank → grounded generation with deterministic disclaimers; **or** the SQL path.
+- **Query (per request):** intent gate (admission control — resolve / clarify / refuse) →
+  router → hybrid retrieval (RBAC pre-filter) → cross-encoder rerank → relevance floor →
+  grounded generation with content-keyed disclaimers; **or** the SQL path.
 - **Three-layer rule:** graph nodes → services → adapters. Each layer only calls the next;
   vendor SDKs live only in adapters.
 
@@ -238,7 +244,9 @@ pytest backend/evals/test_rbac.py -x && \
 - numeric faithfulness, 
 - chunk quality, 
 - medical safety, 
-- judge calibration.
+- judge calibration,
+- intent gate (multi-turn admission control — resolved/ambiguous/empty), 
+- disclaimer keying + relevance floor (deterministic, no LLM).
 
 Thresholds live in `backend/evals/eval_config.py`. See [`docs/EVAL_PLAN.md`](docs/EVAL_PLAN.md).
 
@@ -268,5 +276,6 @@ Visual tracing (Arize Phoenix) is planned — see Roadmap.
   (multi-step queries, self-correction). *(Phase 12)*
 - **Distributed tracing with Arize Phoenix** — per-request span waterfalls + latency/cost
   dashboards on top of the existing PHI-safe logs. *(Phase 12)*
-- **Extension eval tracks** — dedicated multi-turn-rewrite and HITL-SQL-safety tracks.
+- **Extension eval tracks** — intent-gate and disclaimer-keying tracks are **built**;
+  dedicated multi-turn-retrieval-lift and HITL-SQL-token-lifecycle tracks are next.
 

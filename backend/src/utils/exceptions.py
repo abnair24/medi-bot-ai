@@ -22,6 +22,16 @@ class SQLGenerationError(MediBotError):
     """Raised when SQL generation produces invalid SQL or execution fails."""
 
 
+class SQLValidationError(SQLGenerationError):
+    """Raised when generated SQL fails read-only / allow-list validation (Phase 12).
+
+    Subclasses SQLGenerationError so it maps to the same HTTP response, but is distinct so
+    the agentic tool-loop can feed the specific reason back to the LLM as a tool error. The
+    message states WHY (not a SELECT, multiple statements, forbidden table) so the agent
+    can self-correct rather than retry the same query.
+    """
+
+
 class RoutingError(MediBotError):
     """Raised when the semantic router returns an unrecognised route type."""
 

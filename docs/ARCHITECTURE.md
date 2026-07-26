@@ -13,28 +13,42 @@ User → Login (JWT) → /chat
                    extract role from JWT
                         │
                LANGGRAPH STATE GRAPH
-               ┌────────────────────────────────────────────┐
-               │  State: {question, role, history, route,  │
-               │         chunks, answer, proposed_sql}     │
-               ├────────────────────────────────────────────┤
-               │  REWRITE NODE (if follow-up question)     │
-               │       │                                   │
-               │  ROUTER NODE (LLM)                        │
-               │  ┌────┴────┐                               │
-               │ ANALYTICAL  KNOWLEDGE                     │
-               │  │            │                            │
-               │ SQL_PROPOSE RETRIEVE → RERANK → GENERATE  │
-               │  │                                        │
-               │ interrupt() ←─ HITL pause                 │
-               │  │ (user approves/rejects)                │
-               │ SQL_EXECUTE → NARRATE                     │
-               │       │                                   │
-               │  RESPONSE NODE                             │
-               └───────────┴────────────────────────────────┘
+               ┌──────────────────────────────────────────────────────┐
+               │  State: {question, role, history, intent_state,      │
+               │   clarify_candidates, route, chunks, answer,         │
+               │   proposed_sql}                                      │
+               ├──────────────────────────────────────────────────────┤
+               │  RESOLVE_INTENT NODE  (admission control)            │
+               │   ┌──────────┬───────────────┬───────────┐          │
+               │ resolved   ambiguous        empty                   │
+               │   │          │                │                     │
+               │   │   interrupt() ←─ HITL   refuse → END            │
+               │   │   clarify (which topic?) (no retrieval)         │
+               │   ▼          │(resume)                              │
+               │  ROUTER NODE (LLM)  ◄────────┘                      │
+               │  ┌────┴────┐                                        │
+               │ ANALYTICAL  KNOWLEDGE                               │
+               │  │            │                                     │
+               │  │   RETRIEVE → RERANK → GENERATE                   │
+               │  │            (relevance floor · safety guard ·     │
+               │  │             content-keyed disclaimers)           │
+               │ SQL_PROPOSE                                         │
+               │  │                                                  │
+               │ interrupt() ←─ HITL pause (approve/reject)          │
+               │  │                                                  │
+               │ SQL_EXECUTE → NARRATE                               │
+               └───────────┴──────────────────────────────────────────┘
                         │
                response: answer + sources + retrieval_type
                (state persisted via SqliteSaver for multi-turn)
 ```
+
+**Intent gate (admission control):** the first node decides *whether* a turn is answerable
+before any retrieval runs. `resolved` → proceed to the router; `ambiguous` (a follow-up that
+matches ≥2 prior topics) → `interrupt()` for a clarify prompt, resuming into the router with
+the chosen topic; `empty` (contentless, no recoverable prior intent) → deterministic refusal
+with no retrieval. First-turn cases are decided deterministically (no LLM); the LLM is spent
+only on the resolved-vs-ambiguous middle.
 
 ---
 
@@ -103,6 +117,15 @@ No LLM is called during ingestion. No API cost. Run once.
 user question + role (from JWT)
      │
      ▼
+INTENT GATE ─────────────────────────────────── LLM call #0 (only if history)
+     │   admission control BEFORE retrieval. Turn-1 & contentless cases are
+     │   decided deterministically (no LLM). Output: IntentResolution
+     │   {state: resolved|ambiguous|empty, resolved_query, candidates}
+     │     - empty      → deterministic refusal, END (no retrieval)
+     │     - ambiguous  → interrupt() clarify → resume with chosen topic
+     │     - resolved   → overwrite question with resolved_query, continue ▼
+     │
+     ▼
 SEMANTIC ROUTER ─────────────────────────────── LLM call #1
      │   model: Groq (Llama-3 / similar)              (cheap, small prompt)
      │   input: question
@@ -139,12 +162,22 @@ CROSS-ENCODER RERANKER ───────────────────
      │   logged: all 10 scores before/after (feeds eval)
      │
      ▼
+RELEVANCE FLOOR ─────────────────────────────── no LLM, deterministic
+     │   drop reranked chunks below settings.rerank_relevance_floor —
+     │   a backstop UNDER the LLM no-relevant sentinel that removes
+     │   keyword-collision noise. If none survive → RBAC denial or
+     │   "no relevant protocol" refusal (no fabricated answer).
+     │
+     ▼
 LLM ANSWER GENERATION ──────────────────────── LLM call #2
      │   model: Groq API (Llama-3 / similar)           (the main LLM call)
-     │   input: question + top-3 chunks as context
+     │   input: question + surviving chunks as context
      │   prompt: see PROMPTS.md §2
      │   output: grounded answer + source citations
      │   constraint: answer ONLY from context, never fabricate
+     │   disclaimers: content-keyed — clinical disclaimer appended only
+     │     when clinical/nursing is CENTRAL (top chunk or plurality),
+     │     not merely present (deterministic, in-code)
      │
      ▼
 RESPONSE
@@ -218,17 +251,18 @@ medibot/
 └── backend/                          # everything importable lives here (PYTHONPATH=backend)
     ├── src/                          # FastAPI app — imported as `from src...`
     │   ├── graph/                    # LangGraph orchestration layer
-    │   │   ├── state.py              # MediBotState TypedDict
-    │   │   ├── nodes.py              # node functions (call services)
-    │   │   ├── edges.py              # conditional edge functions
+    │   │   ├── state.py              # MediBotState TypedDict (+ intent_state, clarify_candidates)
+    │   │   ├── nodes.py              # node functions (resolve_intent, router, retrieve, …)
+    │   │   ├── edges.py              # conditional edges (route_after_intent, …)
     │   │   └── builder.py            # build_graph() — assemble + compile
     │   ├── api/
     │   │   ├── app.py                # FastAPI app, mount routers, compile graph
-    │   │   ├── chat_router.py        # /chat, /chat/resume, /collections, /health
+    │   │   ├── chat_router.py        # /chat, /chat/resume, /chat/clarify, /chats (list/load/delete), /collections, /health
     │   │   ├── eval_router.py        # /evals/run, /evals/status, /evals/results (admin)
     │   │   └── auth_router.py        # /login, JWT
     │   ├── services/                 # retrieval, rerank, generation, sql_rag, router,
-    │   │   │                         #   rewrite, hyde, denial, safety_guard, eval
+    │   │   │                         #   intent, hyde, denial, safety_guard, sql_validator,
+    │   │   │                         #   chat_session_store, eval
     │   │   └── …
     │   ├── adapters/                 # qdrant, embedding, sparse, reranker, llm, sql
     │   ├── models/                   # schemas.py, chunk.py, auth.py
@@ -242,13 +276,14 @@ medibot/
     │   └── data/
     │       ├── docs/                 # source PDFs + MD (git-tracked)
     │       ├── mediassist.db         # SQLite — app data (git-tracked, small)
-    │       └── checkpoints.db        # SQLite — LangGraph state (gitignored)
+    │       ├── checkpoints.db        # SQLite — LangGraph conversation state (gitignored)
+    │       └── sessions.db           # SQLite — per-user chat index for history/delete (gitignored)
     └── evals/                        # imported as `from evals...`
         ├── golden/                   # factual, adversarial, sql, numbers, safety, routing …
         ├── results/                  # JUnit XML + logs (gitignored)
         ├── conftest.py               # shared fixtures, adapter injection
-        └── test_*.py                 # rbac, safety, chunk_quality, routing, sql,
-                                      #   retrieval, numbers, faithfulness, calibration
+        └── test_*.py                 # rbac, safety, chunk_quality, routing, sql, retrieval,
+                                      #   numbers, faithfulness, calibration, intent, disclaimer
 ```
 
 ---
@@ -275,13 +310,14 @@ sql_rag_service    →   sql_adapter          →   SQLite
 ## 4. Pydantic boundaries (where validation lives)
 
 ```
-API boundary (in):    ChatRequest, LoginRequest         → schemas.py
-API boundary (out):   ChatResponse, Source              → schemas.py
+API boundary (in):    ChatRequest, ClarifyResolveRequest, ConfirmRequest → schemas.py
+API boundary (out):   ChatResponse, Source, SQLProposal, ClarifyProposal → schemas.py
 Ingestion:            ChunkMetadata                     → chunk.py
-Router decision:      RouteDecision                     → schemas.py
+Intent gate:          IntentResolution                  → schemas.py
+Router decision:      RouteDecision, TwoAxisRouteDecision → schemas.py
 SQL output:           SQLResult                         → schemas.py
 Auth:                 User, TokenPayload                → auth.py
-Golden set:           GoldenCase, AdversarialCase        → backend/evals/conftest.py
+Golden set:           RoutingCase, AdversarialCase, IntentCase, DisclaimerCase → backend/evals/eval_schemas.py
 Config:               Settings (pydantic-settings)       → settings.py
 ```
 
@@ -297,6 +333,7 @@ Every pipeline stage logs a structured record. The eval harness reads these.
 
 | Stage | What is logged | Used by eval |
 |---|---|---|
+| Intent gate | intent_state + candidate_count + reason (never the query) | intent-gate confusion matrix |
 | Router | route decision + reasoning | routing confusion matrix |
 | Retrieval | top-K chunk IDs + scores + role filter applied | retrieval P@3, RBAC leak check |
 | Reranker | before/after scores + final top-3 | rerank lift measurement |

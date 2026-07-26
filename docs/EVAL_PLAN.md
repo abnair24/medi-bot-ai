@@ -5,7 +5,9 @@
 > those same outputs against ground truth.
 
 **Rule of thumb:** deterministic checks (RBAC, retrieval, SQL, routing, chunk quality,
-numbers, safety) use plain **pytest + numpy** — no framework where an assertion suffices.
+numbers, safety, disclaimer keying + relevance floor) use plain **pytest + numpy** — no
+framework where an assertion suffices. The intent gate is deterministic on first-turn cases
+and LLM-adjudicated only on the ambiguous multi-turn middle.
 
 Only judgment-based checks (faithfulness, correctness) use **DeepEval**, and the judge model
 (`openai/gpt-oss-20b`) is **different from the generator** (`llama-3.3-70b`) to avoid
@@ -29,6 +31,8 @@ self-preference bias. Thresholds live in `backend/evals/eval_config.py` — neve
 | 9 | Multi-turn retrieval | Query-rewrite → P@3 lift over the raw follow-up | P@3 delta | numpy | rewrite **P@3 ≥ baseline** (+0.10 on ambiguous) | 🔲 planned |
 | 10 | Rewrite faithfulness | Rewrite preserves user intent (no hallucinated topic) | DeepEval semantic similarity | DeepEval | **≥ 0.90** | 🔲 planned |
 | 11 | HITL SQL safety | Token lifecycle: approve / reject / expire / tamper / replay | Pass/fail assertions | pytest | **all pass** — fail-closed | 🔲 planned |
+| 12 | **Intent gate** | Admission control: is a turn resolved / ambiguous / empty *before* retrieval? | Accuracy, 3×3 confusion matrix | pytest (+ LLM for multiturn) | first-turn (deterministic) **= 1.0**; overall **≥ 0.85** | ✅ built |
+| 13 | **Disclaimer keying + floor** | Clinical disclaimer keyed on *central* clinical content, not any stray chunk; relevance floor drops noise | Label match (deterministic) | pytest (no LLM) | **= 1.0** — fail-closed | ✅ built |
 
 ---
 
@@ -46,6 +50,8 @@ self-preference bias. Thresholds live in `backend/evals/eval_config.py` — neve
 | 7 | Medical safety | `backend/evals/test_safety.py` | `golden/safety.json` |
 | 8 | Judge calibration | `backend/evals/test_calibration.py` | `golden/calibration_labels.json` |
 | 9–11 | Multi-turn / HITL | `test_multiturn.py`, `test_sql_hitl.py` *(planned)* | `golden/multiturn.json`, `golden/sql_hitl.json` *(planned)* |
+| 12 | Intent gate | `backend/evals/test_intent.py` | `golden/intent.json` |
+| 13 | Disclaimer keying + floor | `backend/evals/test_disclaimer.py` | `golden/disclaimer.json` |
 
 Shared infra: `eval_config.py` (thresholds), `eval_schemas.py` (Pydantic golden shapes),
 `conftest.py` (real-adapter fixtures), `groq_judge.py` (DeepEval judge over Groq).

@@ -48,6 +48,14 @@ RETRIEVAL_BADGE: dict[str, str] = {
 
 ADMIN_ROLE = "admin"
 
+# Hard cap on turns per chat — mirrors backend `max_turns_per_session`. UI hint only;
+# the backend enforces it authoritatively.
+MAX_TURNS_PER_CHAT = 5
+
+# How many recent chats the sidebar shows. The DB keeps ALL of them; this only trims
+# the panel. Backend returns sessions newest-first, so this is a simple head-slice.
+RECENT_CHATS_SHOWN = 5
+
 # ---------------------------------------------------------------------------
 # API client helpers — thin wrappers over the FastAPI backend
 # ---------------------------------------------------------------------------
@@ -85,6 +93,37 @@ def api_get_collections(token: str) -> list[str]:
     return resp.json().get("collections", [])
 
 
+def api_list_chats(token: str) -> list[dict[str, Any]]:
+    """GET /chats → the user's past chat sessions (metadata only)."""
+    try:
+        resp = requests.get(f"{API_BASE}/chats", headers=_auth_header(token), timeout=10)
+        resp.raise_for_status()
+        return resp.json().get("sessions", [])
+    except requests.RequestException:
+        return []
+
+
+def api_load_chat(session_id: str, token: str) -> list[dict[str, Any]]:
+    """GET /chats/{id} → reconstructed messages [{role, content}, ...] for a past chat."""
+    resp = requests.get(
+        f"{API_BASE}/chats/{session_id}", headers=_auth_header(token), timeout=15
+    )
+    resp.raise_for_status()
+    return resp.json().get("messages", [])
+
+
+def api_delete_chat(session_id: str, token: str) -> bool:
+    """DELETE /chats/{id} → True if the chat (index + content) was deleted."""
+    try:
+        resp = requests.delete(
+            f"{API_BASE}/chats/{session_id}", headers=_auth_header(token), timeout=10
+        )
+        resp.raise_for_status()
+        return True
+    except requests.RequestException:
+        return False
+
+
 def api_chat(question: str, session_id: str, role: str, token: str) -> dict[str, Any]:
     """POST /chat → ChatResponse dict or SQLProposal dict (HITL pending)."""
     resp = requests.post(
@@ -102,6 +141,18 @@ def api_resume(confirmation_token: str, approved: bool, token: str) -> dict[str,
     resp = requests.post(
         f"{API_BASE}/chat/resume",
         json={"confirmation_token": confirmation_token, "approved": approved},
+        headers=_auth_header(token),
+        timeout=90,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def api_clarify(confirmation_token: str, clarification: str, token: str) -> dict[str, Any]:
+    """POST /chat/clarify → ChatResponse (or another proposal) after disambiguation."""
+    resp = requests.post(
+        f"{API_BASE}/chat/clarify",
+        json={"confirmation_token": confirmation_token, "clarification": clarification},
         headers=_auth_header(token),
         timeout=90,
     )
@@ -164,6 +215,7 @@ def init_session_state() -> None:
         "session_id": None,
         "messages": [],
         "pending_sql": None,
+        "pending_clarify": None,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -272,23 +324,100 @@ def _manual_login(username: str, password: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _start_new_chat() -> None:
+    """Begin a fresh chat — new thread_id, cleared transcript and pending proposal."""
+    st.session_state.session_id = str(uuid.uuid4())
+    st.session_state.messages = []
+    st.session_state.pending_sql = None
+    st.session_state.pending_clarify = None
+
+
+def _load_chat(session_id: str) -> None:
+    """Load a past chat's messages and switch to its session (text-only history)."""
+    try:
+        raw = api_load_chat(session_id, st.session_state.token)
+    except Exception:
+        st.warning("Could not load that chat.")
+        return
+    st.session_state.session_id = session_id
+    st.session_state.pending_sql = None
+    st.session_state.pending_clarify = None
+    st.session_state.messages = [
+        {"role": m.get("role", "assistant"), "content": m.get("content", "")}
+        for m in raw
+    ]
+
+
+def _delete_chat(session_id: str) -> None:
+    """Delete a chat everywhere: backend (index + content) then local state.
+
+    If the deleted chat is the one currently open, fall back to a fresh chat so the
+    user isn't left viewing a transcript that no longer exists.
+    """
+    ok = api_delete_chat(session_id, st.session_state.token)
+    if not ok:
+        st.warning("Could not delete that chat.")
+        return
+    if session_id == st.session_state.session_id:
+        _start_new_chat()
+    st.rerun()
+
+
+def _chat_label(chat: dict[str, Any]) -> str:
+    """PHI-safe sidebar title — derived from the timestamp, never the question text."""
+    ts = chat.get("updated_at") or chat.get("created_at") or ""
+    try:
+        return datetime.fromisoformat(ts).strftime("Chat · %b %d, %H:%M")
+    except (ValueError, TypeError):
+        return "Chat"
+
+
 def render_sidebar() -> None:
-    """Role badge, accessible collections, and logout."""
+    """Role badge, New Chat, past chats, accessible collections, and logout."""
     with st.sidebar:
         role = st.session_state.role
         icon = ROLE_ICON.get(role, "⚪")
 
         st.markdown(f"### {icon} {st.session_state.username}")
         st.caption(f"Role: **{role}**")
-        st.divider()
 
+        if st.button("➕ New chat", use_container_width=True, type="primary"):
+            _start_new_chat()
+            st.rerun()
+
+        # --- Past chats (persisted per user; survive logout) ---
+        # The DB keeps every chat; the sidebar shows only the RECENT_CHATS_SHOWN most
+        # recent (backend returns them newest-first) to keep the panel compact.
+        st.divider()
+        st.markdown("**Your chats**")
+        chats = api_list_chats(st.session_state.token)
+        if not chats:
+            st.caption("No past chats yet.")
+        for chat in chats[:RECENT_CHATS_SHOWN]:
+            sid = chat["session_id"]
+            is_current = sid == st.session_state.session_id
+            # Row layout: the chat label (wide) + a delete button (narrow).
+            open_col, del_col = st.columns([5, 1])
+            with open_col:
+                if st.button(
+                    ("🟢 " if is_current else "") + _chat_label(chat),
+                    key=f"chat_{sid}",
+                    use_container_width=True,
+                    disabled=is_current,
+                ):
+                    _load_chat(sid)
+                    st.rerun()
+            with del_col:
+                if st.button("🗑", key=f"del_{sid}", use_container_width=True,
+                             help="Delete this chat permanently"):
+                    _delete_chat(sid)
+
+        st.divider()
         st.markdown("**Accessible collections**")
         for col in st.session_state.collections:
             st.markdown(f"- `{col}`")
 
         st.divider()
-        st.caption(f"Session: `{st.session_state.session_id[:8]}…`")
-
         if st.button("Sign out", use_container_width=True):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
@@ -446,8 +575,15 @@ def handle_new_question(question: str) -> None:
             )
             return
 
+    _apply_chat_response(data)
+
+
+def _apply_chat_response(data: dict[str, Any]) -> None:
+    """Route a /chat response into session state: SQL HITL, clarify, or a final answer."""
     if data.get("needs_confirmation"):
         st.session_state.pending_sql = data
+    elif data.get("needs_clarification"):
+        st.session_state.pending_clarify = data
     else:
         st.session_state.messages.append(
             {
@@ -457,6 +593,56 @@ def handle_new_question(question: str) -> None:
                 "sources": data.get("sources", []),
             }
         )
+
+
+def render_clarify_prompt() -> None:
+    """Show the 'did you mean X or Y?' prompt when a clarification is pending."""
+    pending: dict | None = st.session_state.pending_clarify
+    if pending is None:
+        return
+
+    st.info(pending.get("prompt", "Could you clarify which topic you mean?"), icon="❓")
+
+    candidates: list[str] = pending.get("candidates", [])
+    if candidates:
+        cols = st.columns(len(candidates))
+        for i, cand in enumerate(candidates):
+            with cols[i]:
+                if st.button(cand, key=f"clarify_{i}", use_container_width=True):
+                    _resolve_clarify(cand)
+
+    with st.form("clarify_form", clear_on_submit=True):
+        typed = st.text_input("Or type the topic you mean:", label_visibility="collapsed",
+                              placeholder="Or type the topic you mean…")
+        if st.form_submit_button("Send") and typed.strip():
+            _resolve_clarify(typed.strip())
+
+
+def _resolve_clarify(clarification: str) -> None:
+    """Send the user's disambiguation to /chat/clarify and apply the resulting turn.
+
+    The clarification is NOT appended as a new user turn — it resolves the original
+    (ambiguous) question, which stays the single user turn for turn-limit accounting.
+    """
+    pending = st.session_state.pending_clarify
+    with st.spinner("Thinking…"):
+        try:
+            data = api_clarify(
+                confirmation_token=pending["confirmation_token"],
+                clarification=clarification,
+                token=st.session_state.token,
+            )
+        except requests.HTTPError as exc:
+            st.session_state.messages.append(
+                {"role": "assistant", "content": _http_error_message(exc)}
+            )
+            st.session_state.pending_clarify = None
+            st.rerun()
+            return
+
+    st.session_state.pending_clarify = None
+    _apply_chat_response(data)
+    st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -487,11 +673,35 @@ def render_assistant_tab() -> None:
         with center:
             render_hitl_approval()
 
+    # Ambiguity clarification prompt (intent gate), left-aligned with the conversation.
+    if st.session_state.pending_clarify is not None:
+        left, _ = st.columns([3, 2])
+        with left:
+            render_clarify_prompt()
+
+    # Turn limit: a chat is capped at MAX_TURNS_PER_CHAT turns (backend enforces too).
+    turns_used = sum(1 for m in st.session_state.messages if m["role"] == "user")
+    limit_reached = turns_used >= MAX_TURNS_PER_CHAT
+
+    if limit_reached:
+        left, _ = st.columns([3, 2])
+        with left:
+            st.info(
+                f"You've reached the {MAX_TURNS_PER_CHAT}-turn limit for this chat. "
+                "Start a **New chat** (sidebar) to continue.",
+                icon="🔒",
+            )
+
     # chat_input must live at the top level (not inside columns) to dock at the
     # bottom of the viewport; its width is constrained via CSS. Disabled while a
-    # HITL proposal is pending.
-    if st.session_state.pending_sql is None:
-        question = st.chat_input("Ask a question about internal protocols…")
+    # HITL proposal or clarification is pending, or the turn limit is reached.
+    if st.session_state.pending_sql is None and st.session_state.pending_clarify is None:
+        question = st.chat_input(
+            "Ask a question about internal protocols…"
+            if not limit_reached
+            else f"{MAX_TURNS_PER_CHAT}-turn limit reached — start a new chat",
+            disabled=limit_reached,
+        )
         if question:
             handle_new_question(question)
             st.rerun()
