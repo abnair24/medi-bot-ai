@@ -222,8 +222,9 @@ MEDIBOT_API_URL=http://localhost:8000 streamlit run frontend/app.py --server.por
 
 ## Evaluations
 
-The eval harness is the point of the project. Tracks are **run on demand from the admin
-Evaluation tab** (`POST /evals/run`), or headless:
+Tracks are **run on demand from the admin Evaluation tab** (`POST /evals/run`), or headless:
+
+<img width="1711" height="843" alt="Screenshot 2026-07-26 at 6 36 44 PM" src="https://github.com/user-attachments/assets/6c9cf2bd-6630-409b-b3bd-e451f34ed058" />
 
 ```bash
 # all tracks (needs Groq for judge tracks) — writes JUnit XML + logs to backend/evals/results/
@@ -233,7 +234,7 @@ pytest backend/evals/ -v
 # deterministic-only (no Groq tokens), RBAC first / fail-fast
 
 pytest backend/evals/test_rbac.py -x && \
-  pytest backend/evals/test_safety.py backend/evals/test_chunk_quality.py
+pytest backend/evals/test_safety.py backend/evals/test_chunk_quality.py
 ```
 
 `Tracks`: 
