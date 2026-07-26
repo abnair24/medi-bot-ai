@@ -1,4 +1,4 @@
-# Medi-Bot-AI — RBAC-Aware Hospital Knowledge & Analytics Agent
+# 🏥 Medi-Bot-AI — RBAC-Aware Hospital Knowledge & Analytics Agent
 
 Medi-Bot-AI is an internal AI **agent** for a hospital network. Staff ask natural-language
 questions and get **cited answers from the right documents *and* the right data** — an intent
@@ -8,7 +8,7 @@ allowed to see.
 
 ---
 
-## Highlights
+## 🚀 Highlights
 
 | Capability | What it does |
 |---|---|
@@ -24,7 +24,7 @@ allowed to see.
 
 ---
 
-## Architecture
+## 🗺️ Architecture
 
 ```mermaid
 flowchart TB
@@ -126,7 +126,7 @@ and Pydantic boundaries.
 
 ---
 
-## Tech stack
+## 🛠️ Tech stack
 
 | Concern | Choice |
 |---|---|
@@ -144,7 +144,7 @@ and Pydantic boundaries.
 
 ---
 
-## Quick start (Docker — recommended)
+## ⚡ Quick start (Docker — recommended)
 
 **Prerequisites:** Docker, and a free [Groq API key](https://console.groq.com).
 
@@ -223,10 +223,11 @@ MEDIBOT_API_URL=http://localhost:8000 streamlit run frontend/app.py --server.por
 
 ---
 
-## Evaluations
+## 🔑 Evaluations
 
-The eval harness is the point of the project. Tracks are **run on demand from the admin
-Evaluation tab** (`POST /evals/run`), or headless:
+Tracks are **run on demand from the admin Evaluation tab** (`POST /evals/run`), or headless:
+
+<img width="1711" height="843" alt="Screenshot 2026-07-26 at 6 36 44 PM" src="https://github.com/user-attachments/assets/6c9cf2bd-6630-409b-b3bd-e451f34ed058" />
 
 ```bash
 # all tracks (needs Groq for judge tracks) — writes JUnit XML + logs to backend/evals/results/
@@ -236,7 +237,7 @@ pytest backend/evals/ -v
 # deterministic-only (no Groq tokens), RBAC first / fail-fast
 
 pytest backend/evals/test_rbac.py -x && \
-  pytest backend/evals/test_safety.py backend/evals/test_chunk_quality.py
+pytest backend/evals/test_safety.py backend/evals/test_chunk_quality.py
 ```
 
 `Tracks`: 
@@ -259,7 +260,7 @@ Thresholds live in `backend/evals/eval_config.py`. See [`docs/EVAL_PLAN.md`](doc
 
 ---
 
-## Observability
+## 🔍 Observability
 
 PHI-safe by design — only IDs, counts, scores, and durations are ever logged.
 
@@ -273,12 +274,10 @@ Visual tracing (Arize Phoenix) is planned — see Roadmap.
 
 ---
 
-## Roadmap
+## 🪧 Roadmap
 
 - **Agentic SQL tool-loop** — replace the linear SQL path with a ReAct sub-graph
   (multi-step queries, self-correction). *(Phase 12)*
 - **Distributed tracing with Arize Phoenix** — per-request span waterfalls + latency/cost
   dashboards on top of the existing PHI-safe logs. *(Phase 12)*
-- **Extension eval tracks** — intent-gate and disclaimer-keying tracks are **built**;
-  dedicated multi-turn-retrieval-lift and HITL-SQL-token-lifecycle tracks are next.
 
