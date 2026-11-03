@@ -39,7 +39,9 @@ qdrant_data/
 qdrant_snapshots/
 
 # ── Model caches (downloaded at first run) ──────────
-models/
+# Anchored to repo root: an unanchored `models/` also matched backend/src/models/
+# (the Pydantic schema package) and kept it out of git.
+/models/
 .cache/
 *.onnx
 *.bin
