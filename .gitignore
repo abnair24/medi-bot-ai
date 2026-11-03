@@ -39,7 +39,7 @@ qdrant_data/
 qdrant_snapshots/
 
 # ── Model caches (downloaded at first run) ──────────
-models/
+/models/
 .cache/
 *.onnx
 *.bin
